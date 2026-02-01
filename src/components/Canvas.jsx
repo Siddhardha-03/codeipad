@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Stage, Layer, Rect, Text, Group, Line, Circle, Arrow, Transformer, Arc, Path } from 'react-konva';
+import { Stage, Layer, Rect, Text, Group, Line, Circle, Arrow, Transformer, Path } from 'react-konva';
 import '../styles/Canvas.css';
 
 const Canvas = React.forwardRef(({
@@ -11,19 +11,20 @@ const Canvas = React.forwardRef(({
   activeArrayId,
   onArrayActivate,
   onArrayMove,
-  cellFontSize,
-  cellWidth,
-  cellHeight,
   textAnnotations,
   onDropShape,
   onCellValueChange,
-  onCellResize,
   onCellRightClick,
   onCellHover,
-  onPointerRemove,
-  onPointerMove,
   onTextMove,
   onTextRemove,
+  onAddTextAtPosition,
+  onUpdateTextContent,
+  canvasBackground,
+  canvasColor,
+  canvasFont,
+  textColor,
+  textStyle,
 }, ref) => {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
@@ -36,29 +37,77 @@ const Canvas = React.forwardRef(({
   const [editingCell, setEditingCell] = useState(null);
   const [editingValue, setEditingValue] = useState('');
   const [selectedArrayId, setSelectedArrayId] = useState(null);
+  const [isDraggingObject, setIsDraggingObject] = useState(false);
+  const [editingTextId, setEditingTextId] = useState(null);
+  const [editingTextValue, setEditingTextValue] = useState('');
 
-  const CELL_WIDTH = cellWidth;
-  const CELL_HEIGHT = cellHeight;
+  const CELL_WIDTH = 50;
+  const CELL_HEIGHT = 50;
   const INDEX_HEIGHT = 28;
   const START_X = 90;
   const START_Y = 120;
   const CELL_SPACING = 8;
   const ARRAY_GAP = 70;
 
-  const POINTER_COLORS = {
-    'i': '#FF6B6B',
-    'j': '#4ECDC4',
-    'low': '#95E1D3',
-    'high': '#FFB84D',
-    'left': '#A8D8EA',
-    'right': '#FFB3BA',
-    'mid': '#FFFACD',
-    'start': '#B19CD9',
-    'end': '#87CEEB',
-    'current': '#FFD700'
+  const getTextStyleProps = (style) => {
+    const baseProps = {
+      none: { shadowColor: 'transparent', shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 },
+      neon: { 
+        shadowColor: '#00ff00', 
+        shadowBlur: 15, 
+        shadowOffsetX: 0, 
+        shadowOffsetY: 0,
+        stroke: '#00ff00',
+        strokeWidth: 0.5
+      },
+      'outer-glow': {
+        shadowColor: '#667eea',
+        shadowBlur: 20,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0
+      },
+      'soft-glow': {
+        shadowColor: '#ffd700',
+        shadowBlur: 10,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        opacity: 0.95
+      },
+      'inner-glow': {
+        shadowColor: '#ff69b4',
+        shadowBlur: 8,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        stroke: '#ff69b4',
+        strokeWidth: 0.3
+      },
+      'light-beam': {
+        shadowColor: '#ffff00',
+        shadowBlur: 25,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        strokeWidth: 1
+      },
+      aura: {
+        shadowColor: '#ff00ff',
+        shadowBlur: 18,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        opacity: 0.92
+      },
+      hologram: {
+        shadowColor: '#00ffff',
+        shadowBlur: 12,
+        shadowOffsetX: 0,
+        shadowOffsetY: 0,
+        stroke: '#00ffff',
+        strokeWidth: 0.2,
+        opacity: 0.85
+      }
+    };
+    return baseProps[style] || baseProps.none;
   };
 
-  // Handle window resize
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
@@ -74,7 +123,26 @@ const Canvas = React.forwardRef(({
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Get cell position
+  const resizeTextArea = (el, value, fontSize = 14) => {
+    if (!el) return;
+    const lines = (value || '').split('\n');
+    const maxLineLength = Math.max(1, ...lines.map((line) => line.length));
+    const estimatedWidth = Math.ceil(maxLineLength * fontSize * 0.62) + 16;
+    const width = Math.min(900, Math.max(120, estimatedWidth));
+    el.style.width = `${width}px`;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+
+  useEffect(() => {
+    if (editingTextId && inputRef.current) {
+      const el = inputRef.current;
+      const currentText = textAnnotations.find((t) => t.id === editingTextId);
+      const currentFontSize = currentText?.fontSize || 14;
+      resizeTextArea(el, editingTextValue, currentFontSize);
+    }
+  }, [editingTextId, editingTextValue, textAnnotations]);
+
   const getArrayBaseY = (arrayIndex) => {
     return START_Y + arrayIndex * (CELL_HEIGHT + INDEX_HEIGHT + ARRAY_GAP);
   };
@@ -94,10 +162,10 @@ const Canvas = React.forwardRef(({
     };
   };
 
-  // Handle cell click
   const handleCellClickEvent = (arrayId, arrayIndex, index) => {
     onArrayActivate(arrayId);
     setSelectedArrayId(arrayId);
+    setIsDraggingObject(true);
   };
 
   const handleCellDoubleClickEvent = (arrayId, arrayIndex, index) => {
@@ -107,11 +175,26 @@ const Canvas = React.forwardRef(({
     const currentCellWidth = customSize?.width || CELL_WIDTH;
     const currentCellHeight = customSize?.height || CELL_HEIGHT;
     
+    let stageX = 0;
+    let stageY = 0;
+    let stageScale = 1;
+    if (stageRef.current) {
+      const stagePos = stageRef.current.getPosition();
+      stageX = stagePos.x;
+      stageY = stagePos.y;
+      stageScale = stageRef.current.scaleX();
+    }
+    
+    const scrollX = containerRef.current?.scrollLeft || 0;
+    const scrollY = containerRef.current?.scrollTop || 0;
+    const containerX = pos.x * stageScale + stageX + scrollX;
+    const containerY = pos.y * stageScale + stageY + scrollY;
+    
     setEditingCell({
       arrayId,
       index,
-      x: pos.x,
-      y: pos.y,
+      x: containerX,
+      y: containerY,
       width: currentCellWidth,
       height: currentCellHeight
     });
@@ -133,52 +216,79 @@ const Canvas = React.forwardRef(({
     setEditingCell(null);
   };
 
-  // Handle cell right click
-  const handleCellRightClickEvent = (arrayId, index, e) => {
-    e.evt.preventDefault();
-    onCellRightClick(arrayId, index);
+  const handleTextDoubleClick = (textId, text) => {
+    const textAnnotation = textAnnotations.find(t => t.id === textId);
+    if (!textAnnotation) return;
+
+    setEditingTextId(textId);
+    setEditingTextValue(text);
+
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  };
+
+  const commitTextEdit = () => {
+    if (editingTextId && editingTextValue !== '') {
+      onUpdateTextContent(editingTextId, editingTextValue);
+    }
+    setEditingTextId(null);
+  };
+
+  const cancelTextEdit = () => {
+    setEditingTextId(null);
+  };
+
+  const handleStageDoubleClick = (e) => {
+    // Only add text if clicking on empty Stage
+    if (e.target === e.target.getStage() && onAddTextAtPosition) {
+      const stage = stageRef.current;
+      if (!stage) return;
+
+      // Get click position relative to the stage
+      const pointerPos = stage.getPointerPosition();
+      if (pointerPos) {
+        // Convert to stage coordinates
+        const stagePos = stage.getPosition();
+        const stageX = (pointerPos.x - stagePos.x) / stage.scaleX();
+        const stageY = (pointerPos.y - stagePos.y) / stage.scaleY();
+        
+        // Create the text annotation
+        const textId = Date.now();
+        onAddTextAtPosition(stageX, stageY, textId);
+        
+        // Immediately enter edit mode
+        setEditingTextId(textId);
+        setEditingTextValue('');
+        
+        setTimeout(() => {
+          inputRef.current?.focus();
+        }, 0);
+      }
+    }
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     const shapeType = e.dataTransfer.getData('application/shape');
-    if (!shapeType || !containerRef.current) return;
+    if (!shapeType || !containerRef.current || !stageRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
-    onDropShape(shapeType, { x, y });
+    const stagePos = stageRef.current.getPosition();
+    const stageScale = stageRef.current.scaleX();
+    const stageX = (x - stagePos.x) / stageScale;
+    const stageY = (y - stagePos.y) / stageScale;
+
+    onDropShape(shapeType, { x: stageX, y: stageY });
   };
 
   const handleDragOver = (e) => {
     e.preventDefault();
   };
-
-  useEffect(() => {
-    if (!transformerRef.current) return;
-    const node = selectedShapeId ? shapeRefs.current[selectedShapeId] : null;
-    if (node) {
-      transformerRef.current.nodes([node]);
-    } else {
-      transformerRef.current.nodes([]);
-    }
-    transformerRef.current.getLayer()?.batchDraw();
-  }, [selectedShapeId, shapes]);
-
-  useEffect(() => {
-    if (!arrayTransformerRef.current) return;
-    let node = null;
-    if (selectedArrayId) {
-      node = arrayRefs.current[selectedArrayId];
-    }
-    if (node) {
-      arrayTransformerRef.current.nodes([node]);
-    } else {
-      arrayTransformerRef.current.nodes([]);
-    }
-    arrayTransformerRef.current.getLayer()?.batchDraw();
-  }, [selectedArrayId]);
 
   const handleShapeTransformEnd = (shape) => {
     const node = shapeRefs.current[shape.id];
@@ -213,24 +323,48 @@ const Canvas = React.forwardRef(({
     }
   };
 
-  const handleCellTransformEnd = (arrayId, index, node) => {
-    const scaleX = node.scaleX();
-    const scaleY = node.scaleY();
-    const array = arrays.find(a => a.id === arrayId);
-    const customSize = array.cellSizes?.[index];
-    const currentCellWidth = customSize?.width || CELL_WIDTH;
-    const currentCellHeight = customSize?.height || CELL_HEIGHT;
-    
-    const newWidth = Math.max(40, Math.round(currentCellWidth * scaleX));
-    const newHeight = Math.max(30, Math.round(currentCellHeight * scaleY));
-    
+  useEffect(() => {
+    if (!transformerRef.current) return;
+    const node = selectedShapeId ? shapeRefs.current[selectedShapeId] : null;
+    if (node) {
+      transformerRef.current.nodes([node]);
+    } else {
+      transformerRef.current.nodes([]);
+    }
+    transformerRef.current.getLayer()?.batchDraw();
+  }, [selectedShapeId, shapes]);
+
+  useEffect(() => {
+    if (!arrayTransformerRef.current) return;
+    let node = null;
+    if (selectedArrayId) {
+      node = arrayRefs.current[selectedArrayId];
+    }
+    if (node) {
+      arrayTransformerRef.current.nodes([node]);
+    } else {
+      arrayTransformerRef.current.nodes([]);
+    }
+    arrayTransformerRef.current.getLayer()?.batchDraw();
+  }, [selectedArrayId, arrays]);
+
+  const handleArrayResizeEnd = (arrayId) => {
+    const node = arrayRefs.current[arrayId];
+    if (!node) return;
+
     node.scaleX(1);
     node.scaleY(1);
-    onCellResize(arrayId, index, newWidth, newHeight);
   };
 
+  const shapeStyleProps = getTextStyleProps(textStyle);
+
   return (
-    <div className="canvas-container" ref={containerRef} onDrop={handleDrop} onDragOver={handleDragOver}>
+    <div
+      className={`canvas-container canvas-bg-${canvasBackground} canvas-color-${canvasColor || 'white'}`}
+      ref={containerRef}
+      onDrop={handleDrop}
+      onDragOver={handleDragOver}
+    >
       {editingCell && (
         <input
           ref={inputRef}
@@ -240,7 +374,8 @@ const Canvas = React.forwardRef(({
             top: `${editingCell.y}px`,
             width: `${editingCell.width}px`,
             height: `${editingCell.height}px`,
-            fontSize: `${cellFontSize}px`
+            fontSize: '14px',
+            color: textColor || '#000'
           }}
           value={editingValue}
           onChange={(e) => setEditingValue(e.target.value)}
@@ -255,18 +390,101 @@ const Canvas = React.forwardRef(({
           }}
         />
       )}
+      {editingTextId && (() => {
+        const textAnn = textAnnotations.find(t => t.id === editingTextId);
+        if (!textAnn || !stageRef.current) return null;
+        
+        // Get Stage's current position and scale
+        const stagePos = stageRef.current.getPosition();
+        const stageScale = stageRef.current.scaleX();
+        
+        // Calculate textarea position in container space
+        const textX = textAnn.x * stageScale + stagePos.x;
+        const textY = textAnn.y * stageScale + stagePos.y;
+        
+        return (
+          <textarea
+            ref={inputRef}
+            className="text-annotation-input"
+            style={{
+              position: 'absolute',
+              zIndex: 6,
+              left: `${textX}px`,
+              top: `${textY}px`,
+              width: 'auto',
+              height: 'auto',
+              fontSize: `${textAnn.fontSize || 14}px`,
+              fontFamily: canvasFont,
+              border: '2px solid #667eea',
+              borderRadius: '4px',
+              padding: '0px',
+              margin: '0px',
+              outline: 'none',
+              boxShadow: '0 0 0 3px rgba(102, 126, 234, 0.15)',
+              resize: 'none',
+              background: 'transparent',
+              color: textColor || '#000',
+              whiteSpace: 'pre-wrap',
+              overflow: 'hidden',
+              minWidth: '120px',
+              maxWidth: '900px'
+            }}
+            value={editingTextValue}
+            onChange={(e) => {
+              setEditingTextValue(e.target.value);
+              if (inputRef.current) {
+                resizeTextArea(inputRef.current, e.target.value, textAnn.fontSize || 14);
+              }
+            }}
+            onBlur={commitTextEdit}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                cancelTextEdit();
+              }
+            }}
+          />
+        );
+      })()}
       <Stage
         ref={stageRef}
         width={stageSize.width}
         height={stageSize.height}
-        style={{ background: '#ffffff' }}
+        style={{ background: 'transparent' }}
+        draggable={!isDraggingObject}
+        onDragStart={() => {
+          if (stageRef.current && !isDraggingObject) {
+            stageRef.current.container().style.cursor = 'grabbing';
+          }
+        }}
+        onDragEnd={() => {
+          if (stageRef.current) {
+            stageRef.current.container().style.cursor = !isDraggingObject ? 'grab' : 'default';
+          }
+        }}
         onMouseDown={(e) => {
           const clickedOnEmpty = e.target === e.target.getStage();
           if (clickedOnEmpty) {
             onSelectShape(null);
             setSelectedArrayId(null);
+            setIsDraggingObject(false);
+          } else {
+            setIsDraggingObject(true);
           }
         }}
+        onMouseUp={() => {
+          setIsDraggingObject(false);
+        }}
+        onMouseEnter={() => {
+          if (stageRef.current && !isDraggingObject) {
+            stageRef.current.container().style.cursor = 'grab';
+          }
+        }}
+        onMouseLeave={() => {
+          if (stageRef.current) {
+            stageRef.current.container().style.cursor = 'default';
+          }
+        }}
+        onDblClick={handleStageDoubleClick}
       >
         {/* Shapes Layer */}
         <Layer>
@@ -282,6 +500,7 @@ const Canvas = React.forwardRef(({
                   fill={shape.fill}
                   stroke={shape.stroke}
                   strokeWidth={shape.strokeWidth}
+                  {...shapeStyleProps}
                   draggable
                   onClick={() => onSelectShape(shape.id)}
                   onTap={() => onSelectShape(shape.id)}
@@ -301,6 +520,7 @@ const Canvas = React.forwardRef(({
                   points={shape.points}
                   stroke={shape.stroke}
                   strokeWidth={shape.strokeWidth}
+                  {...shapeStyleProps}
                   draggable
                   onClick={() => onSelectShape(shape.id)}
                   onTap={() => onSelectShape(shape.id)}
@@ -323,6 +543,7 @@ const Canvas = React.forwardRef(({
                   strokeWidth={shape.strokeWidth}
                   pointerLength={shape.pointerLength}
                   pointerWidth={shape.pointerWidth}
+                  {...shapeStyleProps}
                   draggable
                   onClick={() => onSelectShape(shape.id)}
                   onTap={() => onSelectShape(shape.id)}
@@ -337,7 +558,6 @@ const Canvas = React.forwardRef(({
               const arcEndX = shape.type === 'arcArrowUp' ? -radius : radius;
               const arcEndY = shape.type === 'arcArrowUp' ? 0 : 0;
               
-              // Create arc path without diameter lines
               const pathData = shape.type === 'arcArrowUp' 
                 ? `M ${radius} 0 A ${radius} ${radius} 0 0 0 ${-radius} 0`
                 : `M ${-radius} 0 A ${radius} ${radius} 0 0 0 ${radius} 0`;
@@ -358,6 +578,7 @@ const Canvas = React.forwardRef(({
                     data={pathData}
                     stroke={shape.stroke}
                     strokeWidth={shape.strokeWidth}
+                    {...shapeStyleProps}
                   />
                   <Line
                     x={arcEndX}
@@ -367,6 +588,7 @@ const Canvas = React.forwardRef(({
                     fill={shape.stroke}
                     stroke={shape.stroke}
                     strokeWidth={1}
+                    {...shapeStyleProps}
                   />
                 </Group>
               );
@@ -384,6 +606,7 @@ const Canvas = React.forwardRef(({
                 stroke={shape.stroke}
                 strokeWidth={shape.strokeWidth}
                 cornerRadius={shape.cornerRadius}
+                {...shapeStyleProps}
                 draggable
                 onClick={() => onSelectShape(shape.id)}
                 onTap={() => onSelectShape(shape.id)}
@@ -405,6 +628,10 @@ const Canvas = React.forwardRef(({
             ref={arrayTransformerRef}
             rotateEnabled={false}
             enabledAnchors={['middle-left', 'middle-right', 'top-center', 'bottom-center']}
+            padding={15}
+            onTransformEnd={() => {
+              if (selectedArrayId) handleArrayResizeEnd(selectedArrayId);
+            }}
           />
         </Layer>
 
@@ -436,7 +663,7 @@ const Canvas = React.forwardRef(({
                   y={rowY - INDEX_HEIGHT - 2}
                   text={`A${arrayIndex + 1}`}
                   fontSize={12}
-                  fontFamily="Arial"
+                  fontFamily={canvasFont}
                   fill={isActive ? '#667eea' : '#999'}
                   fontStyle="bold"
                 />
@@ -447,7 +674,7 @@ const Canvas = React.forwardRef(({
                   y={rowY - INDEX_HEIGHT}
                   text="Index"
                   fontSize={12}
-                  fontFamily="Arial"
+                  fontFamily={canvasFont}
                   fill="#666"
                   fontStyle="bold"
                 />
@@ -458,7 +685,7 @@ const Canvas = React.forwardRef(({
                     y={rowY - INDEX_HEIGHT}
                     text={index.toString()}
                     fontSize={12}
-                    fontFamily="Arial"
+                    fontFamily={canvasFont}
                     fill="#333"
                     fontStyle="bold"
                   />
@@ -470,7 +697,7 @@ const Canvas = React.forwardRef(({
                   y={rowY + CELL_HEIGHT / 2 - 10}
                   text="Value"
                   fontSize={12}
-                  fontFamily="Arial"
+                  fontFamily={canvasFont}
                   fill="#666"
                   fontStyle="bold"
                 />
@@ -503,9 +730,6 @@ const Canvas = React.forwardRef(({
                         stroke={isActive ? '#667eea' : '#333'}
                         strokeWidth={isActive ? 2.5 : 2}
                         cornerRadius={4}
-                        onContextMenu={(e) => handleCellRightClickEvent(array.id, index, e)}
-                        onMouseEnter={() => onCellHover(`Array ${arrayIndex + 1} Cell [${index}] = ${value}`)}
-                        onMouseLeave={() => onCellHover('')}
                         listening={true}
                         cursor="pointer"
                       />
@@ -514,8 +738,8 @@ const Canvas = React.forwardRef(({
                         width={CELL_WIDTH}
                         height={CELL_HEIGHT}
                         text={value}
-                        fontSize={cellFontSize}
-                        fontFamily="Arial, monospace"
+                        fontSize={14}
+                        fontFamily={canvasFont}
                         fill="#000"
                         align="center"
                         verticalAlign="middle"
@@ -529,101 +753,44 @@ const Canvas = React.forwardRef(({
           })}
         </Layer>
 
-        {/* Pointer Layer */}
-        <Layer>
-          {arrays.map((array, arrayIndex) => (
-            Object.entries(array.pointers).map(([name, index]) => {
-              const cellPos = getCellPositionAbsolute(arrayIndex, index, array);
-              const pointerColor = POINTER_COLORS[name] || '#FFD700';
-              const pointerX = cellPos.x + CELL_WIDTH / 2;
-              const pointerY = cellPos.y - 40;
-
-              return (
-                <Group
-                  key={`pointer-${array.id}-${name}`}
-                  x={pointerX}
-                  y={pointerY}
-                  onClick={() => onPointerRemove(array.id, name)}
-                  cursor="pointer"
-                >
-                  <Line
-                    points={[0, 0, 0, 24]}
-                    stroke={pointerColor}
-                    strokeWidth={2}
-                    pointerLength={12}
-                    pointerWidth={12}
-                  />
-
-                  <Rect
-                    x={-30}
-                    y={28}
-                    width={60}
-                    height={22}
-                    fill={pointerColor}
-                    cornerRadius={4}
-                    opacity={0.9}
-                  />
-
-                  <Text
-                    x={-30}
-                    y={31}
-                    width={60}
-                    text={name}
-                    fontSize={12}
-                    fontFamily="Arial, monospace"
-                    fill="#FFF"
-                    fontStyle="bold"
-                    align="center"
-                    verticalAlign="middle"
-                  />
-                </Group>
-              );
-            })
-          ))}
-        </Layer>
-
         {/* Text Annotations Layer */}
         <Layer>
-          {textAnnotations.map((ann) => (
-            <Group
-              key={`text-${ann.id}`}
-              x={ann.x}
-              y={ann.y}
-              draggable
-              onDragEnd={(e) => {
-                onTextMove(ann.id, e.target.x(), e.target.y());
-              }}
-              onClick={(e) => {
-                if (e.evt.detail === 2) {
-                  onTextRemove(ann.id);
-                }
-              }}
-              cursor="move"
-            >
-              {/* Background */}
-              <Rect
-                width={200}
-                height={60}
-                fill="#FFFACD"
-                stroke="#999"
-                strokeWidth={1}
-                cornerRadius={4}
-              />
-
-              {/* Text */}
-              <Text
-                x={5}
-                y={5}
-                width={190}
-                height={50}
-                text={ann.text}
-                fontSize={ann.fontSize}
-                fontFamily="Arial"
-                fill="#000"
-                wrap="word"
-              />
-            </Group>
-          ))}
+          {textAnnotations.map((ann) => {
+            const styleProps = getTextStyleProps(ann.style);
+            return (
+              <Group
+                key={`text-${ann.id}`}
+                x={ann.x}
+                y={ann.y}
+                draggable
+                onDragEnd={(e) => {
+                  onTextMove(ann.id, e.target.x(), e.target.y());
+                }}
+                onClick={(e) => {
+                  if (e.evt.detail === 2) {
+                    onTextRemove(ann.id);
+                  }
+                }}
+                cursor="move"
+              >
+                <Text
+                  x={0}
+                  y={0}
+                  text={ann.text}
+                  fontSize={ann.fontSize}
+                  fontFamily={ann.font || canvasFont}
+                  fill={ann.color || '#000'}
+                  wrap="none"
+                  {...styleProps}
+                  onDblClick={(e) => {
+                    e.cancelBubble = true;
+                    handleTextDoubleClick(ann.id, ann.text);
+                  }}
+                  cursor="text"
+                />
+              </Group>
+            );
+          })}
         </Layer>
       </Stage>
     </div>

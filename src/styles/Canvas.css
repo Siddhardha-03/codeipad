@@ -1,10 +1,184 @@
 .canvas-container {
   flex: 1;
   display: flex;
-  overflow: hidden;
+  overflow: auto;
   background: #ffffff;
   position: relative;
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.canvas-bg-white {
+  background: #ffffff;
+}
+
+.canvas-bg-grid {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(#e6e6e6 1px, transparent 1px),
+    linear-gradient(90deg, #e6e6e6 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.canvas-bg-lines {
+  background-color: #ffffff;
+  background-image: linear-gradient(#e6e6e6 1px, transparent 1px);
+  background-size: 100% 24px;
+}
+
+.canvas-bg-graph {
+  background-color: #ffffff;
+  background-image:
+    linear-gradient(#d9d9d9 1px, transparent 1px),
+    linear-gradient(90deg, #d9d9d9 1px, transparent 1px),
+    linear-gradient(#f0f0f0 1px, transparent 1px),
+    linear-gradient(90deg, #f0f0f0 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+
+.canvas-bg-dots {
+  background-color: #ffffff;
+  background-image: radial-gradient(#d9d9d9 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Dracula Theme */
+.canvas-color-dracula {
+  background-color: #282a36;
+}
+
+.canvas-color-dracula.canvas-bg-grid {
+  background-color: #282a36;
+  background-image:
+    linear-gradient(#44475a 1px, transparent 1px),
+    linear-gradient(90deg, #44475a 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.canvas-color-dracula.canvas-bg-lines {
+  background-color: #282a36;
+  background-image: linear-gradient(#44475a 1px, transparent 1px);
+  background-size: 100% 24px;
+}
+
+.canvas-color-dracula.canvas-bg-graph {
+  background-color: #282a36;
+  background-image:
+    linear-gradient(#44475a 1px, transparent 1px),
+    linear-gradient(90deg, #44475a 1px, transparent 1px),
+    linear-gradient(#3d3f47 1px, transparent 1px),
+    linear-gradient(90deg, #3d3f47 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+
+.canvas-color-dracula.canvas-bg-dots {
+  background-color: #282a36;
+  background-image: radial-gradient(#44475a 1.5px, transparent 1.5px);
+  background-size: 20px 20px;
+}
+
+/* VSCode Light Theme */
+.canvas-color-vscode-light {
+  background-color: #f3f3f3;
+}
+
+.canvas-color-vscode-light.canvas-bg-grid {
+  background-color: #f3f3f3;
+  background-image:
+    linear-gradient(#d0d0d0 1px, transparent 1px),
+    linear-gradient(90deg, #d0d0d0 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.canvas-color-vscode-light.canvas-bg-lines {
+  background-color: #f3f3f3;
+  background-image: linear-gradient(#d0d0d0 1px, transparent 1px);
+  background-size: 100% 24px;
+}
+
+.canvas-color-vscode-light.canvas-bg-graph {
+  background-color: #f3f3f3;
+  background-image:
+    linear-gradient(#d0d0d0 1px, transparent 1px),
+    linear-gradient(90deg, #d0d0d0 1px, transparent 1px),
+    linear-gradient(#e8e8e8 1px, transparent 1px),
+    linear-gradient(90deg, #e8e8e8 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+
+.canvas-color-vscode-light.canvas-bg-dots {
+  background-color: #f3f3f3;
+  background-image: radial-gradient(#d0d0d0 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Light Pink Theme */
+.canvas-color-light-pink {
+  background-color: #ffe4e1;
+}
+
+.canvas-color-light-pink.canvas-bg-grid {
+  background-color: #ffe4e1;
+  background-image:
+    linear-gradient(#ffc0cb 1px, transparent 1px),
+    linear-gradient(90deg, #ffc0cb 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.canvas-color-light-pink.canvas-bg-lines {
+  background-color: #ffe4e1;
+  background-image: linear-gradient(#ffc0cb 1px, transparent 1px);
+  background-size: 100% 24px;
+}
+
+.canvas-color-light-pink.canvas-bg-graph {
+  background-color: #ffe4e1;
+  background-image:
+    linear-gradient(#ffc0cb 1px, transparent 1px),
+    linear-gradient(90deg, #ffc0cb 1px, transparent 1px),
+    linear-gradient(#ffd7dc 1px, transparent 1px),
+    linear-gradient(90deg, #ffd7dc 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+
+.canvas-color-light-pink.canvas-bg-dots {
+  background-color: #ffe4e1;
+  background-image: radial-gradient(#ffc0cb 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+/* Light Yellow Theme */
+.canvas-color-light-yellow {
+  background-color: #fffacd;
+}
+
+.canvas-color-light-yellow.canvas-bg-grid {
+  background-color: #fffacd;
+  background-image:
+    linear-gradient(#f0e68c 1px, transparent 1px),
+    linear-gradient(90deg, #f0e68c 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+
+.canvas-color-light-yellow.canvas-bg-lines {
+  background-color: #fffacd;
+  background-image: linear-gradient(#f0e68c 1px, transparent 1px);
+  background-size: 100% 24px;
+}
+
+.canvas-color-light-yellow.canvas-bg-graph {
+  background-color: #fffacd;
+  background-image:
+    linear-gradient(#f0e68c 1px, transparent 1px),
+    linear-gradient(90deg, #f0e68c 1px, transparent 1px),
+    linear-gradient(#fffdc0 1px, transparent 1px),
+    linear-gradient(90deg, #fffdc0 1px, transparent 1px);
+  background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+}
+
+.canvas-color-light-yellow.canvas-bg-dots {
+  background-color: #fffacd;
+  background-image: radial-gradient(#f0e68c 1px, transparent 1px);
+  background-size: 20px 20px;
 }
 
 .cell-input {
@@ -20,6 +194,21 @@
   box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
   background: #ffffff;
   z-index: 5;
+}
+
+.text-annotation-input {
+  position: absolute;
+  z-index: 6;
+  border: 2px solid #667eea;
+  border-radius: 4px;
+  font-size: 14px;
+  font-family: Arial;
+  padding: 4px;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
+  background: #ffffff;
+  resize: none;
+  caret-color: #667eea;
 }
 
 .canvas-empty {
@@ -53,7 +242,7 @@
 canvas {
   display: block;
   max-width: 100%;
-  background: #ffffff;
+  background: transparent;
 }
 
 .cell-resize-modal {

@@ -1,11 +1,11 @@
 .toolbar {
   background: var(--primary-gradient);
-  padding: 16px 24px;
+  padding: 8px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   box-shadow: var(--shadow-md);
-  gap: 24px;
+  gap: 12px;
   flex-wrap: wrap;
   animation: slideInDown 0.4s ease;
 }
@@ -13,23 +13,23 @@
 .toolbar-brand {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   color: white;
-  min-width: 200px;
+  min-width: 150px;
 }
 
 .brand-title {
-  font-size: 22px;
+  font-size: 16px;
   font-weight: 800;
   letter-spacing: -0.5px;
   margin: 0;
 }
 
 .brand-subtitle {
-  font-size: 11px;
+  font-size: 9px;
   font-weight: 500;
   opacity: 0.85;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.4px;
   text-transform: uppercase;
   margin: 0;
 }
@@ -37,71 +37,88 @@
 .toolbar-content {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 8px;
   flex-wrap: wrap;
   flex: 1;
 }
 
 .button-group {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   align-items: center;
 }
 
 .font-control {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   background: rgba(255, 255, 255, 0.1);
-  padding: 6px 10px;
-  border-radius: 8px;
+  padding: 4px 8px;
+  border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.background-select {
+  background: rgba(255, 255, 255, 0.95);
+  color: #333;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.background-select:focus {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
 }
 
 .font-label {
   color: #fff;
-  font-size: 11px;
-  letter-spacing: 0.4px;
+  font-size: 10px;
+  letter-spacing: 0.3px;
   text-transform: uppercase;
   font-weight: 600;
+  white-space: nowrap;
 }
 
 .font-buttons {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 
 .font-size {
   color: #fff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  min-width: 44px;
+  min-width: 40px;
   text-align: center;
 }
 
 .separator {
   width: 1px;
-  height: 32px;
+  height: 24px;
   background-color: rgba(255, 255, 255, 0.25);
-  margin: 0 4px;
+  margin: 0 2px;
 }
 
 /* Button Styles */
 
 .btn {
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 13px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
   font-weight: 600;
   transition: var(--transition);
   white-space: nowrap;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  letter-spacing: 0.3px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
   border: none;
   cursor: pointer;
   position: relative;
@@ -141,14 +158,14 @@
 }
 
 .btn-lg {
-  padding: 12px 20px;
-  font-size: 14px;
+  padding: 8px 14px;
+  font-size: 12px;
   font-weight: 700;
 }
 
 .btn-sm {
-  padding: 6px 10px;
-  font-size: 11px;
+  padding: 5px 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -241,4 +258,147 @@
     flex: 1;
     justify-content: center;
   }
+}
+/* Light Toolbar (for light canvas themes) */
+.toolbar-light {
+  background: #f5f5f5;
+  color: #333;
+  border-bottom: 1px solid #e0e0e0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.toolbar-light .toolbar-brand {
+  color: #333;
+}
+
+.toolbar-light .brand-title {
+  color: #667eea;
+}
+
+.toolbar-light .brand-subtitle {
+  color: #999;
+}
+
+.toolbar-light .btn-primary {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+}
+
+.toolbar-light .btn-primary:hover {
+  background: linear-gradient(135deg, #5568d3 0%, #663a8e 100%);
+}
+
+.toolbar-light .btn-secondary {
+  background: #ffffff;
+  color: #333;
+  border: 1px solid #d0d0d0;
+}
+
+.toolbar-light .btn-secondary:hover {
+  background: #eeeeee;
+  border-color: #999;
+}
+
+.toolbar-light .btn-danger {
+  background: #ff6b6b;
+  color: white;
+  border: none;
+}
+
+.toolbar-light .btn-danger:hover {
+  background: #ff5252;
+}
+
+.toolbar-light .separator {
+  background: #d0d0d0;
+}
+
+.toolbar-light .font-label {
+  color: #333;
+  font-weight: 600;
+}
+
+.toolbar-light .background-select,
+.toolbar-light .font-size-input,
+.toolbar-light .color-picker {
+  background: #ffffff;
+  color: #333;
+  border: 1px solid #d0d0d0;
+}
+
+.toolbar-light .background-select option {
+  background: #ffffff;
+  color: #333;
+}
+
+/* Dark Toolbar (for Dracula canvas theme) */
+.toolbar-dark {
+  background: #282a36;
+  color: #f8f8f2;
+  border-bottom: 1px solid #44475a;
+}
+
+.toolbar-dark .toolbar-brand {
+  color: #ff79c6;
+}
+
+.toolbar-dark .brand-title {
+  color: #ff79c6;
+}
+
+.toolbar-dark .brand-subtitle {
+  color: #bd93f9;
+}
+
+.toolbar-dark .btn-primary {
+  background: linear-gradient(135deg, #bd93f9 0%, #ff79c6 100%);
+  color: #282a36;
+  border: none;
+}
+
+.toolbar-dark .btn-primary:hover {
+  background: linear-gradient(135deg, #b081f9 0%, #ff68b8 100%);
+}
+
+.toolbar-dark .btn-secondary {
+  background: #44475a;
+  color: #f8f8f2;
+  border: 1px solid #6272a4;
+}
+
+.toolbar-dark .btn-secondary:hover {
+  background: #6272a4;
+  color: #f8f8f2;
+}
+
+.toolbar-dark .btn-danger {
+  background: #ff5555;
+  color: white;
+  border: none;
+}
+
+.toolbar-dark .btn-danger:hover {
+  background: #ff4444;
+}
+
+.toolbar-dark .separator {
+  background: #44475a;
+}
+
+.toolbar-dark .font-label {
+  color: #f8f8f2;
+}
+
+.toolbar-dark .background-select,
+.toolbar-dark .font-size-input,
+.toolbar-dark .color-picker {
+  background: #44475a;
+  color: #f8f8f2;
+  border: 1px solid #6272a4;
+}
+
+.toolbar-dark .background-select option {
+  background: #44475a;
+  color: #f8f8f2;
 }

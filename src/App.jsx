@@ -4,25 +4,27 @@ import Toolbar from './components/Toolbar';
 import Canvas from './components/Canvas';
 import ShapesPanel from './components/ShapesPanel';
 import ArrayModal from './components/modals/ArrayModal';
-import PointerModal from './components/modals/PointerModal';
-import HighlightModal from './components/modals/HighlightModal';
-import TextModal from './components/modals/TextModal';
 import ShapeModal from './components/modals/ShapeModal';
+import HighlightModal from './components/modals/HighlightModal';
 import InfoPanel from './components/InfoPanel';
 
 function App() {
-  const [canvasStarted, setCanvasStarted] = useState(false);
   const [arrays, setArrays] = useState([]);
-  const [activeArrayId, setActiveArrayId] = useState(null);
-  const [textAnnotations, setTextAnnotations] = useState([]);
   const [shapes, setShapes] = useState([]);
   const [selectedShapeId, setSelectedShapeId] = useState(null);
   const [shapeColor, setShapeColor] = useState('#333333');
+  const [activeArrayId, setActiveArrayId] = useState(null);
+  const [textAnnotations, setTextAnnotations] = useState([]);
   const [selectedColor, setSelectedColor] = useState('#FFD700');
   const [infoMessage, setInfoMessage] = useState('');
-  const [cellFontSize, setCellFontSize] = useState(14);
-  const [cellWidth, setCellWidth] = useState(60);
-  const [cellHeight, setCellHeight] = useState(45);
+  const [textFontSize, setTextFontSize] = useState(14);
+  const [textColor, setTextColor] = useState('#000000');
+  const [textFont, setTextFont] = useState('Arial');
+  const [canvasBackground, setCanvasBackground] = useState('white');
+  const [canvasColor, setCanvasColor] = useState('white');
+  const [canvasFont, setCanvasFont] = useState('Arial');
+  const [textStyle, setTextStyle] = useState('none');
+  const [theme, setTheme] = useState('white');
   
   // History management
   const [history, setHistory] = useState([]);
@@ -31,10 +33,8 @@ function App() {
   
   // Modal states
   const [showArrayModal, setShowArrayModal] = useState(false);
-  const [showPointerModal, setShowPointerModal] = useState(false);
-  const [showHighlightModal, setShowHighlightModal] = useState(false);
-  const [showTextModal, setShowTextModal] = useState(false);
   const [showShapeModal, setShowShapeModal] = useState(false);
+  const [showHighlightModal, setShowHighlightModal] = useState(false);
   const [highlightIndex, setHighlightIndex] = useState(0);
   const [highlightArrayId, setHighlightArrayId] = useState(null);
 
@@ -45,18 +45,6 @@ function App() {
   const showInfo = (message) => {
     setInfoMessage(message);
     setTimeout(() => setInfoMessage(''), 3000);
-  };
-
-  // Save current state to history
-  const saveToHistory = () => {
-    const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push({ arrays, shapes, textAnnotations });
-    if (newHistory.length > maxHistorySize) {
-      newHistory.shift();
-    } else {
-      setHistoryIndex(historyIndex + 1);
-    }
-    setHistory(newHistory);
   };
 
   const handleUndo = React.useCallback(() => {
@@ -87,12 +75,12 @@ function App() {
   useEffect(() => {
     if (history.length === 0 || historyIndex === -1) {
       // Initialize history with first state
-      setHistory([{ arrays, shapes, textAnnotations }]);
+      setHistory([{ arrays, textAnnotations }]);
       setHistoryIndex(0);
-    } else if (JSON.stringify(history[historyIndex]) !== JSON.stringify({ arrays, shapes, textAnnotations })) {
+    } else if (JSON.stringify(history[historyIndex]) !== JSON.stringify({ arrays, textAnnotations })) {
       // Save new state to history
       const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push({ arrays, shapes, textAnnotations });
+      newHistory.push({ arrays, textAnnotations });
       if (newHistory.length > maxHistorySize) {
         newHistory.shift();
       } else {
@@ -100,7 +88,7 @@ function App() {
       }
       setHistory(newHistory);
     }
-  }, [arrays, shapes, textAnnotations]);
+  }, [arrays, textAnnotations, history, historyIndex]);
 
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
@@ -132,8 +120,6 @@ function App() {
       size,
       values: new Array(size).fill(''),
       highlights: {},
-      pointers: {},
-      cellSizes: {},
       offsetX: 0,
       offsetY: 0
     };
@@ -160,16 +146,6 @@ function App() {
     showInfo(`Array ${arrayNumber} cell [${index}] = ${value}`);
   };
 
-  const handleCellResize = (arrayId, index, width, height) => {
-    setArrays((prev) =>
-      prev.map((arr) =>
-        arr.id === arrayId
-          ? { ...arr, cellSizes: { ...arr.cellSizes, [index]: { width, height } } }
-          : arr
-      )
-    );
-  };
-
   const handleCellValueChange = (arrayId, index, value) => {
     handleUpdateCellValue(arrayId, index, value);
   };
@@ -184,63 +160,6 @@ function App() {
     setShowHighlightModal(false);
   };
 
-  const handleAddPointer = (name, index) => {
-    if (!activeArrayId) {
-      alert('Create an array first');
-      return;
-    }
-    const activeArray = arrays.find((a) => a.id === activeArrayId);
-    if (!activeArray || index >= activeArray.size) {
-      alert('Invalid index');
-      return;
-    }
-    setArrays((prev) => prev.map((arr) => {
-      if (arr.id !== activeArrayId) return arr;
-      return { ...arr, pointers: { ...arr.pointers, [name]: index } };
-    }));
-    const arrayNumber = arrays.findIndex((a) => a.id === activeArrayId) + 1;
-    showInfo(`Added pointer: ${name} → [${index}] (Array ${arrayNumber})`);
-    setShowPointerModal(false);
-  };
-
-  const handleRemovePointer = (arrayId, name) => {
-    setArrays((prev) => prev.map((arr) => {
-      if (arr.id !== arrayId) return arr;
-      const newPointers = { ...arr.pointers };
-      delete newPointers[name];
-      return { ...arr, pointers: newPointers };
-    }));
-    showInfo(`Removed pointer: ${name}`);
-  };
-
-  const handleMovePointer = (name, newIndex) => {
-    if (!activeArrayId) return;
-    const activeArray = arrays.find((a) => a.id === activeArrayId);
-    if (!activeArray || newIndex >= activeArray.size) {
-      alert('Invalid index');
-      return;
-    }
-    setArrays((prev) => prev.map((arr) => {
-      if (arr.id !== activeArrayId) return arr;
-      return { ...arr, pointers: { ...arr.pointers, [name]: newIndex } };
-    }));
-    const arrayNumber = arrays.findIndex((a) => a.id === activeArrayId) + 1;
-    showInfo(`Moved pointer: ${name} → [${newIndex}] (Array ${arrayNumber})`);
-  };
-
-  const handleAddText = (text, fontSize) => {
-    const newAnnotation = {
-      id: Date.now(),
-      text,
-      fontSize,
-      x: 100 + textAnnotations.length * 20,
-      y: 500 + textAnnotations.length * 20
-    };
-    setTextAnnotations([...textAnnotations, newAnnotation]);
-    showInfo('Added text annotation');
-    setShowTextModal(false);
-  };
-
   const handleRemoveText = (id) => {
     setTextAnnotations(textAnnotations.filter(ann => ann.id !== id));
   };
@@ -251,13 +170,33 @@ function App() {
     ));
   };
 
+  const handleUpdateTextContent = (id, text) => {
+    setTextAnnotations(textAnnotations.map(ann =>
+      ann.id === id ? { ...ann, text, style: textStyle, color: textColor, font: textFont } : ann
+    ));
+  };
+
+  const handleAddTextAtPosition = (x, y, textId) => {
+    const newAnnotation = {
+      id: textId || Date.now(),
+      text: '',
+      fontSize: textFontSize,
+      style: textStyle,
+      color: textColor,
+      font: textFont,
+      x: x,
+      y: y
+    };
+    setTextAnnotations([...textAnnotations, newAnnotation]);
+  };
+
   const handleClearAll = () => {
     if (window.confirm('Clear all elements from canvas?')) {
       setArrays([]);
-      setActiveArrayId(null);
-      setTextAnnotations([]);
       setShapes([]);
+      setActiveArrayId(null);
       setSelectedShapeId(null);
+      setTextAnnotations([]);
       showInfo('Canvas cleared');
     }
   };
@@ -449,63 +388,53 @@ function App() {
     }));
   };
 
-  const handleFontIncrease = () => {
-    setCellFontSize((prev) => Math.min(prev + 1, 24));
+  const handleTextFontIncrease = () => {
+    setTextFontSize((prev) => Math.min(prev + 2, 72));
   };
 
-  const handleFontDecrease = () => {
-    setCellFontSize((prev) => Math.max(prev - 1, 10));
-  };
-  const handleCellWidthIncrease = () => {
-    setCellWidth((prev) => Math.min(prev + 10, 150));
+  const handleTextFontDecrease = () => {
+    setTextFontSize((prev) => Math.max(prev - 2, 8));
   };
 
-  const handleCellWidthDecrease = () => {
-    setCellWidth((prev) => Math.max(prev - 10, 40));
+  const handleTextFontSizeChange = (size) => {
+    setTextFontSize(size);
   };
 
-  const handleCellHeightIncrease = () => {
-    setCellHeight((prev) => Math.min(prev + 5, 100));
-  };
-
-  const handleCellHeightDecrease = () => {
-    setCellHeight((prev) => Math.max(prev - 5, 30));
-  };
   return (
     <div className="app">
       <Toolbar
         arrayCreated={arrays.length > 0}
         onArrayClick={() => setShowArrayModal(true)}
-        onTextClick={() => {
-          if (arrays.length === 0) {
-            showInfo('Please create an array first');
-          } else {
-            setShowTextModal(true);
-          }
-        }}
-        onPointerClick={() => {
-          if (arrays.length === 0) {
-            showInfo('Please create an array first');
-          } else {
-            setShowPointerModal(true);
-          }
-        }}
-        onShapeClick={() => setShowShapeModal(true)}
-        onFontIncrease={handleFontIncrease}
-        onFontDecrease={handleFontDecrease}
-        cellFontSize={cellFontSize}
-        cellWidth={cellWidth}
-        cellHeight={cellHeight}
-        onCellWidthIncrease={handleCellWidthIncrease}
-        onCellWidthDecrease={handleCellWidthDecrease}
-        onCellHeightIncrease={handleCellHeightIncrease}
-        onCellHeightDecrease={handleCellHeightDecrease}
+        onTextFontIncrease={handleTextFontIncrease}
+        onTextFontDecrease={handleTextFontDecrease}
+        onTextFontSizeChange={handleTextFontSizeChange}
+        textFontSize={textFontSize}
         onClearClick={handleClearAll}
         onInfoDisplay={showInfo}
         canUndo={canUndo}
         canRedo={canRedo}
         onUndo={handleUndo}
         onRedo={handleRedo}
+        canvasBackground={canvasBackground}
+        onCanvasBackgroundChange={(bg) => {
+          setCanvasBackground(bg);
+          setTheme(bg);
+        }}
+        canvasFont={canvasFont}
+        onCanvasFontChange={setCanvasFont}
+        textStyle={textStyle}
+        onTextStyleChange={setTextStyle}
+        textColor={textColor}
+        onTextColorChange={setTextColor}
+        textFont={textFont}
+        onTextFontChange={setTextFont}
+        canvasColor={canvasColor}
+        onCanvasColorChange={setCanvasColor}
+        theme={theme}
+        onThemeChange={(t) => {
+          setTheme(t);
+          setCanvasBackground(t);
+        }}
       />
 
       <div className="main-content">
@@ -523,19 +452,20 @@ function App() {
           activeArrayId={activeArrayId}
           onArrayActivate={setActiveArrayId}
           onArrayMove={handleArrayMove}
-          cellFontSize={cellFontSize}
-          cellWidth={cellWidth}
-          cellHeight={cellHeight}
           textAnnotations={textAnnotations}
-          onDropShape={handleDropShape}
           onCellValueChange={handleCellValueChange}
-          onCellResize={handleCellResize}
           onCellRightClick={handleShowHighlightModal}
           onCellHover={showInfo}
-          onPointerRemove={handleRemovePointer}
-          onPointerMove={handleMovePointer}
+          onDropShape={handleDropShape}
           onTextMove={handleUpdateTextPosition}
           onTextRemove={handleRemoveText}
+          onAddTextAtPosition={handleAddTextAtPosition}
+          onUpdateTextContent={handleUpdateTextContent}
+          canvasBackground={canvasBackground}
+          canvasColor={canvasColor}
+          canvasFont={canvasFont}
+          textColor={textColor}
+          textStyle={textStyle}
         />
       </div>
 
@@ -546,13 +476,10 @@ function App() {
         onCreate={handleCreateArray}
       />
 
-      <PointerModal
-        isOpen={showPointerModal}
-        onClose={() => setShowPointerModal(false)}
-        onAdd={handleAddPointer}
-        onMove={handleMovePointer}
-        arraySize={arrays.find((a) => a.id === activeArrayId)?.size || 0}
-        existingPointers={arrays.find((a) => a.id === activeArrayId)?.pointers || {}}
+      <ShapeModal
+        isOpen={showShapeModal}
+        onClose={() => setShowShapeModal(false)}
+        onAdd={handleAddShape}
       />
 
       <HighlightModal
@@ -563,18 +490,6 @@ function App() {
         onColorChange={setSelectedColor}
         cellIndex={highlightIndex}
         arraySize={arrays.find((a) => a.id === highlightArrayId)?.size || 0}
-      />
-
-      <TextModal
-        isOpen={showTextModal}
-        onClose={() => setShowTextModal(false)}
-        onAdd={handleAddText}
-      />
-
-      <ShapeModal
-        isOpen={showShapeModal}
-        onClose={() => setShowShapeModal(false)}
-        onAdd={handleAddShape}
       />
 
       {/* Info Panel */}

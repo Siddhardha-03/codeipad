@@ -8,7 +8,7 @@
 .main-content {
   flex: 1;
   display: flex;
-  overflow: hidden;
+  overflow: auto;
   background: #ffffff;
   box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.05);
 }
