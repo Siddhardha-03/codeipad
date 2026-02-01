@@ -1,0 +1,44 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Production
+build/
+dist/
+
+# Misc
+.DS_Store
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.project
+.classpath
+*.log
+
+# npm
+package-lock.json
+yarn.lock
+
+
+*md # Documentation files
+*.pdf # PDF files   
+*.docx # Word documents
+*.xlsx # Excel files
+*.pptx # PowerPoint files
+*.exe # Executable files
+*.dll # Dynamic Link Libraries
+*.bin # Binary files
+*.iso # Disk image files

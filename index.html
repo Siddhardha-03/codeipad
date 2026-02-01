@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DSA Canvas Visualizer - Teaching Tool</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/konva/9.2.0/konva.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <button id="btn-array" class="btn btn-primary" title="Create Array Visualizer">
+                📊 Array
+            </button>
+            <button id="btn-tree" class="btn btn-secondary" title="Create Tree (Coming Soon)">
+                🌳 Tree
+            </button>
+            <button id="btn-graph" class="btn btn-secondary" title="Create Graph (Coming Soon)">
+                🔗 Graph
+            </button>
+            <div class="toolbar-separator"></div>
+            <button id="btn-text" class="btn btn-secondary" title="Add Text Annotation">
+                ✏️ Text
+            </button>
+            <button id="btn-highlight" class="btn btn-secondary" title="Highlight Mode">
+                🎨 Highlight
+            </button>
+            <div class="toolbar-separator"></div>
+            <button id="btn-pointer" class="btn btn-secondary" title="Add Pointer Label (i, j, low, high)">
+                👉 Pointer
+            </button>
+            <div class="toolbar-separator"></div>
+            <button id="btn-clear-all" class="btn btn-danger" title="Clear Canvas">
+                🗑️ Clear All
+            </button>
+        </div>
+
+        <!-- Main Canvas Area -->
+        <div id="canvas-container" class="canvas-container">
+            <div id="konva-container"></div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Array Size Modal -->
+    <div id="array-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Create Array</h2>
+            <label for="array-size">Array Size (1-20):</label>
+            <input type="number" id="array-size" min="1" max="20" value="5">
+            <div class="modal-buttons">
+                <button id="array-confirm" class="btn btn-primary">Create</button>
+                <button id="array-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pointer Label Modal -->
+    <div id="pointer-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add Pointer Label</h2>
+            <label for="pointer-name">Pointer Name:</label>
+            <select id="pointer-name">
+                <option value="">-- Select or Type --</option>
+                <option value="i">i</option>
+                <option value="j">j</option>
+                <option value="low">low</option>
+                <option value="high">high</option>
+                <option value="left">left</option>
+                <option value="right">right</option>
+                <option value="mid">mid</option>
+                <option value="start">start</option>
+                <option value="end">end</option>
+                <option value="current">current</option>
+            </select>
+            <input type="text" id="pointer-custom" placeholder="Or type custom name" style="margin-top: 10px;">
+            <label for="pointer-index" style="margin-top: 15px;">Index to Point to:</label>
+            <input type="number" id="pointer-index" min="0" value="0">
+            <div class="modal-buttons">
+                <button id="pointer-confirm" class="btn btn-primary">Add</button>
+                <button id="pointer-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Highlight Color Modal -->
+    <div id="highlight-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Highlight Cell</h2>
+            <label for="highlight-index">Cell Index:</label>
+            <input type="number" id="highlight-index" min="0" value="0">
+            <label for="highlight-color" style="margin-top: 15px;">Color:</label>
+            <div class="color-picker">
+                <button class="color-btn" data-color="#FFD700" title="Gold" style="background-color: #FFD700;"></button>
+                <button class="color-btn" data-color="#FF6B6B" title="Red" style="background-color: #FF6B6B;"></button>
+                <button class="color-btn" data-color="#4ECDC4" title="Teal" style="background-color: #4ECDC4;"></button>
+                <button class="color-btn" data-color="#95E1D3" title="Mint" style="background-color: #95E1D3;"></button>
+                <button class="color-btn" data-color="#A8D8EA" title="Blue" style="background-color: #A8D8EA;"></button>
+                <button class="color-btn" data-color="#FFC0CB" title="Pink" style="background-color: #FFC0CB;"></button>
+                <button class="color-btn" data-color="#FFEB3B" title="Yellow" style="background-color: #FFEB3B;"></button>
+                <button class="color-btn" data-color="#90EE90" title="Light Green" style="background-color: #90EE90;"></button>
+            </div>
+            <div class="modal-buttons">
+                <button id="highlight-confirm" class="btn btn-primary">Highlight</button>
+                <button id="highlight-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text Annotation Modal -->
+    <div id="text-modal" class="modal hidden">
+        <div class="modal-content">
+            <h2>Add Text</h2>
+            <label for="text-input">Text:</label>
+            <textarea id="text-input" placeholder="Enter your annotation..." style="width: 100%; height: 80px; font-family: Arial, sans-serif;"></textarea>
+            <label for="text-size" style="margin-top: 15px;">Font Size:</label>
+            <input type="number" id="text-size" min="10" max="48" value="16">
+            <div class="modal-buttons">
+                <button id="text-confirm" class="btn btn-primary">Add Text</button>
+                <button id="text-cancel" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Info Panel -->
+    <div id="info-panel" class="info-panel hidden">
+        <p id="info-text"></p>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
