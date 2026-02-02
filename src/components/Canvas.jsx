@@ -4,6 +4,7 @@ import '../styles/Canvas.css';
 
 const Canvas = React.forwardRef(({
   arrays,
+  structures,
   shapes,
   selectedShapeId,
   onSelectShape,
@@ -11,8 +12,17 @@ const Canvas = React.forwardRef(({
   activeArrayId,
   onArrayActivate,
   onArrayMove,
+  onArrayResize,
+  onDropArray,
+  onDeleteArray,
+  onStructureMove,
+  onStructureResize,
+  onStructureValueChange,
+  onDeleteStructure,
+  onDropStructure,
   textAnnotations,
   onDropShape,
+  onDeleteShape,
   onCellValueChange,
   onCellRightClick,
   onCellHover,
@@ -25,14 +35,17 @@ const Canvas = React.forwardRef(({
   canvasFont,
   textColor,
   textStyle,
+  textFontSize,
 }, ref) => {
   const stageRef = useRef(null);
   const containerRef = useRef(null);
   const inputRef = useRef(null);
   const transformerRef = useRef(null);
   const arrayTransformerRef = useRef(null);
+  const structureTransformerRef = useRef(null);
   const shapeRefs = useRef({});
   const arrayRefs = useRef({});
+  const structureRefs = useRef({});
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
   const [editingCell, setEditingCell] = useState(null);
   const [editingValue, setEditingValue] = useState('');
@@ -40,6 +53,12 @@ const Canvas = React.forwardRef(({
   const [isDraggingObject, setIsDraggingObject] = useState(false);
   const [editingTextId, setEditingTextId] = useState(null);
   const [editingTextValue, setEditingTextValue] = useState('');
+  const [selectedStructureId, setSelectedStructureId] = useState(null);
+  const [editingStructure, setEditingStructure] = useState(null);
+  const [editingStructureValue, setEditingStructureValue] = useState('');
+  const [editingStructureField, setEditingStructureField] = useState(null); // 'prev', 'data', or 'next'
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, type, id }
+  const [stageTransform, setStageTransform] = useState({ x: 0, y: 0, scale: 1 });
 
   const CELL_WIDTH = 50;
   const CELL_HEIGHT = 50;
@@ -48,6 +67,10 @@ const Canvas = React.forwardRef(({
   const START_Y = 120;
   const CELL_SPACING = 8;
   const ARRAY_GAP = 70;
+  const STRUCT_NODE_SIZE = 32;
+  const LIST_NODE_WIDTH = 46;
+  const LIST_NODE_HEIGHT = 30;
+  const LIST_NODE_GAP = 30;
 
   const getTextStyleProps = (style) => {
     const baseProps = {
@@ -272,7 +295,10 @@ const Canvas = React.forwardRef(({
   const handleDrop = (e) => {
     e.preventDefault();
     const shapeType = e.dataTransfer.getData('application/shape');
-    if (!shapeType || !containerRef.current || !stageRef.current) return;
+    const arrayType = e.dataTransfer.getData('application/array');
+    const structureType = e.dataTransfer.getData('application/structure');
+    
+    if (!containerRef.current || !stageRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -283,7 +309,47 @@ const Canvas = React.forwardRef(({
     const stageX = (x - stagePos.x) / stageScale;
     const stageY = (y - stagePos.y) / stageScale;
 
-    onDropShape(shapeType, { x: stageX, y: stageY });
+    if (shapeType && onDropShape) {
+      onDropShape(shapeType, { x: stageX, y: stageY });
+    } else if (arrayType && onDropArray) {
+      onDropArray(stageX, stageY);
+    } else if (structureType && onDropStructure) {
+      onDropStructure(structureType, stageX, stageY);
+    }
+  };
+
+  const handleContextMenu = (e, type, id) => {
+    e.evt.preventDefault();
+    const containerRect = containerRef.current?.getBoundingClientRect();
+    if (!containerRect) return;
+    
+    setContextMenu({
+      x: e.evt.clientX - containerRect.left,
+      y: e.evt.clientY - containerRect.top,
+      type,
+      id
+    });
+  };
+
+  const handleDeleteItem = () => {
+    if (!contextMenu) return;
+    
+    switch (contextMenu.type) {
+      case 'array':
+        onDeleteArray?.(contextMenu.id);
+        break;
+      case 'structure':
+        onDeleteStructure?.(contextMenu.id);
+        break;
+      case 'shape':
+        onDeleteShape?.(contextMenu.id);
+        break;
+      case 'text':
+        onTextRemove?.(contextMenu.id);
+        break;
+    }
+    
+    setContextMenu(null);
   };
 
   const handleDragOver = (e) => {
@@ -323,6 +389,25 @@ const Canvas = React.forwardRef(({
     }
   };
 
+  const handleSelectShapeId = (id) => {
+    onSelectShape(id);
+    setSelectedArrayId(null);
+    setSelectedStructureId(null);
+  };
+
+  const handleSelectArray = (arrayId) => {
+    onArrayActivate(arrayId);
+    setSelectedArrayId(arrayId);
+    setSelectedStructureId(null);
+    onSelectShape(null);
+  };
+
+  const handleSelectStructure = (structureId) => {
+    setSelectedStructureId(structureId);
+    setSelectedArrayId(null);
+    onSelectShape(null);
+  };
+
   useEffect(() => {
     if (!transformerRef.current) return;
     const node = selectedShapeId ? shapeRefs.current[selectedShapeId] : null;
@@ -348,15 +433,560 @@ const Canvas = React.forwardRef(({
     arrayTransformerRef.current.getLayer()?.batchDraw();
   }, [selectedArrayId, arrays]);
 
+  useEffect(() => {
+    if (!structureTransformerRef.current) return;
+    let node = null;
+    if (selectedStructureId) {
+      node = structureRefs.current[selectedStructureId];
+    }
+    if (node) {
+      structureTransformerRef.current.nodes([node]);
+    } else {
+      structureTransformerRef.current.nodes([]);
+    }
+    structureTransformerRef.current.getLayer()?.batchDraw();
+  }, [selectedStructureId]);
+
   const handleArrayResizeEnd = (arrayId) => {
     const node = arrayRefs.current[arrayId];
     if (!node) return;
 
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+
+    // Save the scale to state
+    if (onArrayResize) {
+      onArrayResize(arrayId, scaleX, scaleY);
+    }
+
+    // Reset node scale to 1 (scale is now stored in state)
     node.scaleX(1);
     node.scaleY(1);
   };
 
+  const handleStructureResizeEnd = (structureId) => {
+    const node = structureRefs.current[structureId];
+    if (!node) return;
+
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+
+    // Only update if scale actually changed
+    if ((scaleX !== 1 || scaleY !== 1) && onStructureResize) {
+      onStructureResize(structureId, scaleX, scaleY);
+      // Reset node scale to 1 (scale is now stored in state)
+      node.scaleX(1);
+      node.scaleY(1);
+      // Keep structure selected after resize
+      setSelectedStructureId(structureId);
+    }
+  };
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleWheel = (e) => {
+      if (!stageRef.current) return;
+
+      e.preventDefault();
+
+      const rect = container.getBoundingClientRect();
+      const pointerPos = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      };
+
+      // Determine zoom direction (scroll up = zoom in, scroll down = zoom out)
+      const direction = e.deltaY > 0 ? -1 : 1;
+      const zoomSpeed = 1.1;
+
+      setStageTransform((prev) => {
+        const oldScale = prev.scale;
+        const newScale = direction > 0 ? oldScale * zoomSpeed : oldScale / zoomSpeed;
+        const clampedScale = Math.max(0.5, Math.min(5, newScale));
+
+        const mousePointTo = {
+          x: (pointerPos.x - prev.x) / oldScale,
+          y: (pointerPos.y - prev.y) / oldScale
+        };
+
+        const newPos = {
+          x: pointerPos.x - mousePointTo.x * clampedScale,
+          y: pointerPos.y - mousePointTo.y * clampedScale
+        };
+
+        return { x: newPos.x, y: newPos.y, scale: clampedScale };
+      });
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => container.removeEventListener('wheel', handleWheel);
+  }, []);
+
   const shapeStyleProps = getTextStyleProps(textStyle);
+
+  const getTreePositions = (size) => {
+    return Array.from({ length: size }).map((_, i) => {
+      const level = Math.floor(Math.log2(i + 1));
+      const levelStart = Math.pow(2, level) - 1;
+      const indexInLevel = i - levelStart;
+      const nodesInLevel = Math.pow(2, level);
+      const x = (indexInLevel - (nodesInLevel - 1) / 2) * 60;
+      const y = level * 60;
+      return { x, y };
+    });
+  };
+
+  const getGraphPositions = (size) => {
+    const radius = 60 + size * 2;
+    return Array.from({ length: size }).map((_, i) => {
+      const angle = (Math.PI * 2 * i) / size;
+      return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+    });
+  };
+
+  const getStructureNodePosition = (structure, index) => {
+    const size = Math.max(1, structure.size || 1);
+    if (structure.type === 'tree') {
+      const positions = getTreePositions(size);
+      return { x: positions[index]?.x || 0, y: positions[index]?.y || 0, width: STRUCT_NODE_SIZE, height: STRUCT_NODE_SIZE };
+    }
+    if (structure.type === 'graph') {
+      const positions = getGraphPositions(size);
+      return { x: positions[index]?.x || 0, y: positions[index]?.y || 0, width: STRUCT_NODE_SIZE, height: STRUCT_NODE_SIZE };
+    }
+    if (structure.type === 'linked-list') {
+      const boxWidth = 40;
+      const nodeTotalWidth = boxWidth * 2 + 2 + 20; // +2 for separator, +20 for gap
+      return { x: index * nodeTotalWidth, y: 0, width: boxWidth * 2 + 2, height: 40 };
+    }
+    return { x: 0, y: 0, width: STRUCT_NODE_SIZE, height: STRUCT_NODE_SIZE };
+  };
+
+  const handleStructureNodeDoubleClick = (structure, index, field = 'data') => {
+    if (!stageRef.current) return;
+
+    const nodePos = getStructureNodePosition(structure, index);
+    const stagePos = stageRef.current.getPosition();
+    const stageScale = stageRef.current.scaleX();
+    const scrollX = containerRef.current?.scrollLeft || 0;
+    const scrollY = containerRef.current?.scrollTop || 0;
+
+    const scaleX = structure.scaleX || 1;
+    const scaleY = structure.scaleY || 1;
+
+    const containerX = (structure.x + nodePos.x * scaleX) * stageScale + stagePos.x + scrollX;
+    const containerY = (structure.y + nodePos.y * scaleY) * stageScale + stagePos.y + scrollY;
+
+    setEditingStructure({
+      id: structure.id,
+      index,
+      type: structure.type,
+      x: containerX - nodePos.width / 2,
+      y: containerY - nodePos.height / 2,
+      width: nodePos.width,
+      height: nodePos.height
+    });
+    
+    setEditingStructureField(field);
+    
+    // Handle linked list with data and next fields
+    if (structure.type === 'linked-list') {
+      setEditingStructureValue(structure.values?.[index]?.[field] ?? '');
+    } else {
+      setEditingStructureValue(structure.values?.[index] ?? '');
+    }
+    
+    setTimeout(() => {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }, 0);
+  };
+
+  const commitStructureEdit = () => {
+    if (editingStructure && onStructureValueChange) {
+      if (editingStructure.type === 'linked-list') {
+        // For linked list, update the specific field (prev, data, or next)
+        const currentValue = structures.find(s => s.id === editingStructure.id)?.values?.[editingStructure.index] || {};
+        const updatedValue = {
+          ...currentValue,
+          [editingStructureField]: editingStructureValue
+        };
+        onStructureValueChange(editingStructure.id, editingStructure.index, updatedValue);
+      } else {
+        onStructureValueChange(editingStructure.id, editingStructure.index, editingStructureValue);
+      }
+    }
+    setEditingStructure(null);
+    setEditingStructureField(null);
+  };
+
+  const cancelStructureEdit = () => {
+    setEditingStructure(null);
+  };
+
+  const renderTree = (structure) => {
+    const size = Math.max(1, structure.size || 1);
+    const nodeRadius = 16;
+    const levelGap = 60;
+    const nodeGap = 60;
+    const positions = Array.from({ length: size }).map((_, i) => {
+      const level = Math.floor(Math.log2(i + 1));
+      const levelStart = Math.pow(2, level) - 1;
+      const indexInLevel = i - levelStart;
+      const nodesInLevel = Math.pow(2, level);
+      const x = (indexInLevel - (nodesInLevel - 1) / 2) * nodeGap;
+      const y = level * levelGap;
+      return { x, y };
+    });
+
+    return (
+      <Group
+        key={`structure-${structure.id}`}
+        ref={(node) => { structureRefs.current[structure.id] = node; }}
+        x={structure.x}
+        y={structure.y}
+        scaleX={structure.scaleX || 1}
+        scaleY={structure.scaleY || 1}
+        draggable
+        onClick={() => handleSelectStructure(structure.id)}
+        onTap={() => handleSelectStructure(structure.id)}
+        onDragEnd={(e) => onStructureMove?.(structure.id, e.target.x(), e.target.y())}
+        onTransformEnd={() => handleStructureResizeEnd(structure.id)}
+        onContextMenu={(e) => handleContextMenu(e, 'structure', structure.id)}
+      >
+        {positions.map((pos, i) => {
+          if (i === 0) return null;
+          const parentIndex = Math.floor((i - 1) / 2);
+          const parent = positions[parentIndex];
+          return (
+            <Line
+              key={`tree-line-${structure.id}-${i}`}
+              points={[parent.x, parent.y, pos.x, pos.y]}
+              stroke="#667eea"
+              strokeWidth={2}
+              {...shapeStyleProps}
+            />
+          );
+        })}
+        {positions.map((pos, i) => (
+          <Group
+            key={`tree-node-${structure.id}-${i}`}
+            x={pos.x}
+            y={pos.y}
+            onDblClick={() => handleStructureNodeDoubleClick(structure, i)}
+          >
+            <Circle
+              radius={nodeRadius}
+              fill="#ffffff"
+              stroke="#667eea"
+              strokeWidth={2}
+              {...shapeStyleProps}
+            />
+            <Text
+              text={structure.values?.[i] ?? ''}
+              fontSize={12}
+              fontFamily={canvasFont}
+              fill="#333"
+              offsetX={-nodeRadius / 2}
+              offsetY={-6}
+            />
+          </Group>
+        ))}
+      </Group>
+    );
+  };
+
+  const renderGraph = (structure) => {
+    const size = Math.max(1, structure.size || 1);
+    const nodeRadius = 14;
+    const radius = 60 + size * 2;
+    const positions = Array.from({ length: size }).map((_, i) => {
+      const angle = (Math.PI * 2 * i) / size;
+      return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius };
+    });
+
+    return (
+      <Group
+        key={`structure-${structure.id}`}
+        ref={(node) => { structureRefs.current[structure.id] = node; }}
+        x={structure.x}
+        y={structure.y}
+        scaleX={structure.scaleX || 1}
+        scaleY={structure.scaleY || 1}
+        draggable
+        onClick={() => handleSelectStructure(structure.id)}
+        onTap={() => handleSelectStructure(structure.id)}
+        onDragEnd={(e) => onStructureMove?.(structure.id, e.target.x(), e.target.y())}
+        onTransformEnd={() => handleStructureResizeEnd(structure.id)}
+      >
+        {size > 1 && positions.map((pos, i) => {
+          const next = positions[(i + 1) % size];
+          return (
+            <Line
+              key={`graph-line-${structure.id}-${i}`}
+              points={[pos.x, pos.y, next.x, next.y]}
+              stroke="#667eea"
+              strokeWidth={2}
+              {...shapeStyleProps}
+            />
+          );
+        })}
+        {positions.map((pos, i) => (
+          <Group
+            key={`graph-node-${structure.id}-${i}`}
+            x={pos.x}
+            y={pos.y}
+            onDblClick={() => handleStructureNodeDoubleClick(structure, i)}
+          >
+            <Circle
+              radius={nodeRadius}
+              fill="#ffffff"
+              stroke="#667eea"
+              strokeWidth={2}
+              {...shapeStyleProps}
+            />
+            <Text
+              text={structure.values?.[i] ?? ''}
+              fontSize={11}
+              fontFamily={canvasFont}
+              fill="#333"
+              offsetX={-nodeRadius / 2}
+              offsetY={-6}
+            />
+          </Group>
+        ))}
+      </Group>
+    );
+  };
+
+  const renderLinkedList = (structure) => {
+    const size = Math.max(1, structure.size || 1);
+    const listType = structure.subType || 'singly'; // singly, doubly, circular
+    const boxWidth = 40;
+    const boxHeight = 40;
+    const gap = 25;
+    let nodeTotalWidth;
+    
+    // Different widths for different list types
+    if (listType === 'doubly') {
+      nodeTotalWidth = boxWidth * 3 + 4; // prev | data | next (3 boxes with separators)
+    } else {
+      nodeTotalWidth = boxWidth * 2 + 2; // data | next (2 boxes with separator)
+    }
+
+    return (
+      <Group
+        key={`structure-${structure.id}`}
+        ref={(node) => { structureRefs.current[structure.id] = node; }}
+        x={structure.x}
+        y={structure.y}
+        scaleX={structure.scaleX || 1}
+        scaleY={structure.scaleY || 1}
+        draggable
+        onClick={() => handleSelectStructure(structure.id)}
+        onTap={() => handleSelectStructure(structure.id)}
+        onDragEnd={(e) => onStructureMove?.(structure.id, e.target.x(), e.target.y())}  
+        onTransformEnd={() => handleStructureResizeEnd(structure.id)}
+        onContextMenu={(e) => handleContextMenu(e, 'structure', structure.id)}
+      >
+        {/* Label for list type */}
+        <Text
+          text={listType.charAt(0).toUpperCase() + listType.slice(1)}
+          fontSize={10}
+          fontFamily={canvasFont}
+          fill="#667eea"
+          x={0}
+          y={-18}
+          fontStyle="italic"
+        />
+
+        {Array.from({ length: size }).map((_, i) => {
+          const x = i * (nodeTotalWidth + gap);
+          const y = 0;
+          return (
+            <Group
+              key={`list-node-${structure.id}-${i}`}
+              x={x}
+              y={y}
+              onDblClick={() => handleStructureNodeDoubleClick(structure, i)}
+            >
+              {listType === 'doubly' ? (
+                // Doubly Linked List: [prev | data | next]
+                <>
+                  {/* Prev Pointer Box */}
+                  <Rect
+                    width={boxWidth}
+                    height={boxHeight}
+                    fill="#f0f4ff"
+                    stroke="#667eea"
+                    strokeWidth={2}
+                    cornerRadius={2}
+                    {...shapeStyleProps}
+                    onClick={() => handleStructureNodeDoubleClick(structure, i, 'prev')}
+                    onDblClick={() => handleStructureNodeDoubleClick(structure, i, 'prev')}
+                    onTap={() => handleStructureNodeDoubleClick(structure, i, 'prev')}
+                  />
+                  <Text
+                    text={typeof structure.values?.[i] === 'object' ? (structure.values?.[i]?.prev ?? '') : ''}
+                    fontSize={textFontSize || 14}
+                    fontFamily={canvasFont}
+                    fill="#333"
+                    x={boxWidth / 2 - 6}
+                    y={boxHeight / 2 - 7}
+                  />
+
+                  {/* Separator Line */}
+                  <Line
+                    points={[boxWidth, 0, boxWidth, boxHeight]}
+                    stroke="#667eea"
+                    strokeWidth={2}
+                  />
+
+                  {/* Data Box */}
+                  <Rect
+                    x={boxWidth}
+                    width={boxWidth}
+                    height={boxHeight}
+                    fill="#ffffff"
+                    stroke="#667eea"
+                    strokeWidth={2}
+                    cornerRadius={2}
+                    {...shapeStyleProps}
+                    onClick={() => handleStructureNodeDoubleClick(structure, i, 'data')}
+                    onDblClick={() => handleStructureNodeDoubleClick(structure, i, 'data')}
+                    onTap={() => handleStructureNodeDoubleClick(structure, i, 'data')}
+                  />
+                  <Text
+                    text={typeof structure.values?.[i] === 'object' ? (structure.values?.[i]?.data ?? '') : (structure.values?.[i] ?? '')}
+                    fontSize={textFontSize || 14}
+                    fontFamily={canvasFont}
+                    fill="#333"
+                    x={boxWidth + boxWidth / 2 - 6}
+                    y={boxHeight / 2 - 7}
+                  />
+
+                  {/* Separator Line */}
+                  <Line
+                    points={[boxWidth * 2, 0, boxWidth * 2, boxHeight]}
+                    stroke="#667eea"
+                    strokeWidth={2}
+                  />
+
+                  {/* Next Pointer Box */}
+                  <Rect
+                    x={boxWidth * 2}
+                    width={boxWidth}
+                    height={boxHeight}
+                    fill="#f0f4ff"
+                    stroke="#667eea"
+                    strokeWidth={2}
+                    cornerRadius={2}
+                    {...shapeStyleProps}
+                    onClick={() => handleStructureNodeDoubleClick(structure, i, 'next')}
+                    onDblClick={() => handleStructureNodeDoubleClick(structure, i, 'next')}
+                    onTap={() => handleStructureNodeDoubleClick(structure, i, 'next')}
+                  />
+                  <Text
+                    text={typeof structure.values?.[i] === 'object' ? (structure.values?.[i]?.next ?? '') : ''}
+                    fontSize={textFontSize || 14}
+                    fontFamily={canvasFont}
+                    fill="#333"
+                    x={boxWidth * 2 + boxWidth / 2 - 6}
+                    y={boxHeight / 2 - 7}
+                  />
+
+                  {/* Bidirectional arrows for doubly linked list */}
+                  {i < size - 1 && (
+                    <>
+                      {/* Forward arrow */}
+                      <Arrow
+                        points={[boxWidth * 3, boxHeight / 2, boxWidth * 3 + gap - 4, boxHeight / 2]}
+                        stroke="#667eea"
+                        fill="#667eea"
+                        strokeWidth={2}
+                        pointerLength={6}
+                        pointerWidth={6}
+                        {...shapeStyleProps}
+                      />
+                      {/* Backward arrow */}
+                      <Arrow
+                        points={[boxWidth * 3 + gap - 4, boxHeight / 2 - 8, boxWidth * 3, boxHeight / 2 - 8]}
+                        stroke="#ff6b6b"
+                        fill="#ff6b6b"
+                        strokeWidth={1.5}
+                        pointerLength={6}
+                        pointerWidth={6}
+                        {...shapeStyleProps}
+                      />
+                    </>
+                  )}
+                </>
+              ) : (
+                // Singly Linked List: [data | next]
+                <>
+                  {/* Data Box */}
+                  <Rect
+                    width={boxWidth}
+                    height={boxHeight}
+                    fill="#ffffff"
+                    stroke="#667eea"
+                    strokeWidth={2}
+                    cornerRadius={2}
+                    {...shapeStyleProps}
+                    onClick={() => handleStructureNodeDoubleClick(structure, i, 'data')}
+                    onDblClick={() => handleStructureNodeDoubleClick(structure, i, 'data')}
+                    onTap={() => handleStructureNodeDoubleClick(structure, i, 'data')}
+                  />
+                  <Text
+                    text={structure.values?.[i]?.data ?? ''}
+                    fontSize={textFontSize || 14}
+                    fontFamily={canvasFont}
+                    fill="#333"
+                    x={boxWidth / 2 - 6}
+                    y={boxHeight / 2 - 7}
+                  />
+
+                  {/* Separator Line */}
+                  <Line
+                    points={[boxWidth, 0, boxWidth, boxHeight]}
+                    stroke="#667eea"
+                    strokeWidth={2}
+                  />
+
+                  {/* Next Box */}
+                  <Rect
+                    x={boxWidth}
+                    width={boxWidth}
+                    height={boxHeight}
+                    fill="#f0f4ff"
+                    stroke="#667eea"
+                    strokeWidth={2}
+                    cornerRadius={2}
+                    {...shapeStyleProps}
+                    onClick={() => handleStructureNodeDoubleClick(structure, i, 'next')}
+                    onDblClick={() => handleStructureNodeDoubleClick(structure, i, 'next')}
+                    onTap={() => handleStructureNodeDoubleClick(structure, i, 'next')}
+                  />
+                  <Text
+                    text={structure.values?.[i]?.next ?? ''}
+                    fontSize={textFontSize || 14}
+                    fontFamily={canvasFont}
+                    fill="#333"
+                    x={boxWidth + boxWidth / 2 - 6}
+                    y={boxHeight / 2 - 7}
+                  />
+                </>
+              )}
+            </Group>
+          );
+        })}
+
+
+      </Group>
+    );
+  };
 
   return (
     <div
@@ -364,6 +994,7 @@ const Canvas = React.forwardRef(({
       ref={containerRef}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
+      onClick={() => setContextMenu(null)}
     >
       {editingCell && (
         <input
@@ -445,20 +1076,93 @@ const Canvas = React.forwardRef(({
           />
         );
       })()}
+      {editingStructure && (
+        <input
+          ref={inputRef}
+          className="cell-input"
+          style={{
+            left: `${editingStructure.x}px`,
+            top: `${editingStructure.y}px`,
+            width: `${editingStructure.width}px`,
+            height: `${editingStructure.height}px`,
+            fontSize: '13px',
+            color: textColor || '#000'
+          }}
+          value={editingStructureValue}
+          onChange={(e) => setEditingStructureValue(e.target.value)}
+          onBlur={commitStructureEdit}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              commitStructureEdit();
+            }
+            if (e.key === 'Escape') {
+              cancelStructureEdit();
+            }
+          }}
+        />
+      )}
+      {contextMenu && (
+        <div
+          className="context-menu"
+          style={{
+            position: 'absolute',
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`,
+            background: '#fff',
+            border: '1px solid #ccc',
+            borderRadius: '4px',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+            zIndex: 1000,
+            minWidth: '120px'
+          }}
+        >
+          <div
+            style={{
+              padding: '8px 12px',
+              cursor: 'pointer',
+              color: '#ff4444',
+              fontWeight: '500'
+            }}
+            onClick={handleDeleteItem}
+            onMouseEnter={(e) => e.currentTarget.style.background = '#f5f5f5'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+          >
+            Delete
+          </div>
+        </div>
+      )}
       <Stage
         ref={stageRef}
         width={stageSize.width}
         height={stageSize.height}
         style={{ background: 'transparent' }}
+        x={stageTransform.x}
+        y={stageTransform.y}
+        scaleX={stageTransform.scale}
+        scaleY={stageTransform.scale}
         draggable={!isDraggingObject}
         onDragStart={() => {
           if (stageRef.current && !isDraggingObject) {
             stageRef.current.container().style.cursor = 'grabbing';
           }
         }}
+        onDragMove={() => {
+          if (stageRef.current) {
+            setStageTransform((prev) => ({
+              ...prev,
+              x: stageRef.current.x(),
+              y: stageRef.current.y()
+            }));
+          }
+        }}
         onDragEnd={() => {
           if (stageRef.current) {
             stageRef.current.container().style.cursor = !isDraggingObject ? 'grab' : 'default';
+            setStageTransform((prev) => ({
+              ...prev,
+              x: stageRef.current.x(),
+              y: stageRef.current.y()
+            }));
           }
         }}
         onMouseDown={(e) => {
@@ -466,6 +1170,7 @@ const Canvas = React.forwardRef(({
           if (clickedOnEmpty) {
             onSelectShape(null);
             setSelectedArrayId(null);
+            setSelectedStructureId(null);
             setIsDraggingObject(false);
           } else {
             setIsDraggingObject(true);
@@ -502,8 +1207,8 @@ const Canvas = React.forwardRef(({
                   strokeWidth={shape.strokeWidth}
                   {...shapeStyleProps}
                   draggable
-                  onClick={() => onSelectShape(shape.id)}
-                  onTap={() => onSelectShape(shape.id)}
+                  onClick={() => handleSelectShapeId(shape.id)}
+                  onTap={() => handleSelectShapeId(shape.id)}
                   onDragEnd={(e) => onShapeUpdate(shape.id, { x: e.target.x(), y: e.target.y() })}
                   onTransformEnd={() => handleShapeTransformEnd(shape)}
                 />
@@ -522,10 +1227,11 @@ const Canvas = React.forwardRef(({
                   strokeWidth={shape.strokeWidth}
                   {...shapeStyleProps}
                   draggable
-                  onClick={() => onSelectShape(shape.id)}
-                  onTap={() => onSelectShape(shape.id)}
+                  onClick={() => handleSelectShapeId(shape.id)}
+                  onTap={() => handleSelectShapeId(shape.id)}
                   onDragEnd={(e) => onShapeUpdate(shape.id, { x: e.target.x(), y: e.target.y() })}
                   onTransformEnd={() => handleShapeTransformEnd(shape)}
+                  onContextMenu={(e) => handleContextMenu(e, 'shape', shape.id)}
                 />
               );
             }
@@ -545,10 +1251,11 @@ const Canvas = React.forwardRef(({
                   pointerWidth={shape.pointerWidth}
                   {...shapeStyleProps}
                   draggable
-                  onClick={() => onSelectShape(shape.id)}
-                  onTap={() => onSelectShape(shape.id)}
+                  onClick={() => handleSelectShapeId(shape.id)}
+                  onTap={() => handleSelectShapeId(shape.id)}
                   onDragEnd={(e) => onShapeUpdate(shape.id, { x: e.target.x(), y: e.target.y() })}
                   onTransformEnd={() => handleShapeTransformEnd(shape)}
+                  onContextMenu={(e) => handleContextMenu(e, 'shape', shape.id)}
                 />
               );
             }
@@ -573,6 +1280,7 @@ const Canvas = React.forwardRef(({
                   onTap={() => onSelectShape(shape.id)}
                   onDragEnd={(e) => onShapeUpdate(shape.id, { x: e.target.x(), y: e.target.y() })}
                   onTransformEnd={() => handleShapeTransformEnd(shape)}
+                  onContextMenu={(e) => handleContextMenu(e, 'shape', shape.id)}
                 >
                   <Path
                     data={pathData}
@@ -608,10 +1316,11 @@ const Canvas = React.forwardRef(({
                 cornerRadius={shape.cornerRadius}
                 {...shapeStyleProps}
                 draggable
-                onClick={() => onSelectShape(shape.id)}
-                onTap={() => onSelectShape(shape.id)}
+                onClick={() => handleSelectShapeId(shape.id)}
+                onTap={() => handleSelectShapeId(shape.id)}
                 onDragEnd={(e) => onShapeUpdate(shape.id, { x: e.target.x(), y: e.target.y() })}
                 onTransformEnd={() => handleShapeTransformEnd(shape)}
+                onContextMenu={(e) => handleContextMenu(e, 'shape', shape.id)}
               />
             );
           })}
@@ -622,12 +1331,35 @@ const Canvas = React.forwardRef(({
           />
         </Layer>
 
+        {/* Structures Layer */}
+        <Layer>
+          {structures?.map((structure) => {
+            if (structure.type === 'tree') return renderTree(structure);
+            if (structure.type === 'graph') return renderGraph(structure);
+            if (structure.type === 'linked-list') return renderLinkedList(structure);
+            return null;
+          })}
+        </Layer>
+
+        {/* Structure Transformer Layer */}
+        <Layer>
+          <Transformer
+            ref={structureTransformerRef}
+            rotateEnabled={false}
+            enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
+            padding={12}
+            onTransformEnd={() => {
+              if (selectedStructureId) handleStructureResizeEnd(selectedStructureId);
+            }}
+          />
+        </Layer>
+
         {/* Array Transformer Layer */}
         <Layer>
           <Transformer
             ref={arrayTransformerRef}
             rotateEnabled={false}
-            enabledAnchors={['middle-left', 'middle-right', 'top-center', 'bottom-center']}
+            enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
             padding={15}
             onTransformEnd={() => {
               if (selectedArrayId) handleArrayResizeEnd(selectedArrayId);
@@ -646,16 +1378,13 @@ const Canvas = React.forwardRef(({
                 draggable
                 x={array.offsetX || 0}
                 y={array.offsetY || 0}
+                scaleX={array.scaleX || 1}
+                scaleY={array.scaleY || 1}
                 ref={(node) => { arrayRefs.current[array.id] = node; }}
                 onDragEnd={(e) => onArrayMove(array.id, e.target.x(), e.target.y())}
-                onClick={() => {
-                  onArrayActivate(array.id);
-                  setSelectedArrayId(array.id);
-                }}
-                onTap={() => {
-                  onArrayActivate(array.id);
-                  setSelectedArrayId(array.id);
-                }}
+                onClick={() => handleSelectArray(array.id)}
+                onTap={() => handleSelectArray(array.id)}
+                onContextMenu={(e) => handleContextMenu(e, 'array', array.id)}
               >
                 {/* Array Label */}
                 <Text
@@ -771,6 +1500,7 @@ const Canvas = React.forwardRef(({
                     onTextRemove(ann.id);
                   }
                 }}
+                onContextMenu={(e) => handleContextMenu(e, 'text', ann.id)}
                 cursor="move"
               >
                 <Text

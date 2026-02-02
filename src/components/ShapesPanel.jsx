@@ -23,6 +23,7 @@ function ShapesPanel({ shapeColor, onShapeColorChange }) {
   return (
     <div className="shapes-panel" style={{ '--shape-color': shapeColor }}>
       <div className="shapes-title">Shapes</div>
+      <div className="shapes-subtitle">Drag onto the canvas</div>
       <div className="shape-color">
         <label>Color</label>
         <input

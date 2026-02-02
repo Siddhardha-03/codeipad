@@ -8,6 +8,25 @@ function Toolbar({
   onTextFontDecrease,
   onTextFontSizeChange,
   textFontSize,
+  arraySize,
+  onArraySizeIncrease,
+  onArraySizeDecrease,
+  onArraySizeChange,
+  treeSize,
+  onTreeSizeIncrease,
+  onTreeSizeDecrease,
+  onTreeSizeChange,
+  graphSize,
+  onGraphSizeIncrease,
+  onGraphSizeDecrease,
+  onGraphSizeChange,
+  linkedListSize,
+  onLinkedListSizeIncrease,
+  onLinkedListSizeDecrease,
+  onLinkedListSizeChange,
+  linkedListType,
+  onLinkedListTypeChange,
+  onAddStructure,
   onClearClick,
   onInfoDisplay,
   canUndo,
@@ -45,7 +64,7 @@ function Toolbar({
             onClick={onUndo}
             disabled={!canUndo}
             title="Undo (Ctrl+Z)"
-            style={{ padding: '6px 10px', fontSize: '18px', minWidth: 'auto' }}
+            style={{ padding: '4px 6px', fontSize: '14px', minWidth: 'auto' }}
           >
             ↶
           </button>
@@ -54,7 +73,7 @@ function Toolbar({
             onClick={onRedo}
             disabled={!canRedo}
             title="Redo (Ctrl+Shift+Z or Ctrl+Y)"
-            style={{ padding: '6px 10px', fontSize: '18px', minWidth: 'auto' }}
+            style={{ padding: '4px 6px', fontSize: '14px', minWidth: 'auto' }}
           >
             ↷
           </button>
@@ -63,29 +82,265 @@ function Toolbar({
         <div className="separator\"></div>
 
         <div className="button-group">
-          <button
-            className="btn btn-primary btn-lg"
-            onClick={onArrayClick}
-            title="Add a new array"
-          >
-            Add Array
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => onInfoDisplay('Tree visualization coming soon')}
-            title="Create a tree (Coming soon)"
-            disabled
-          >
-            Tree
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => onInfoDisplay('Graph visualization coming soon')}
-            title="Create a graph (Coming soon)"
-            disabled
-          >
-            Graph
-          </button>
+          {/* Add Array with Size Control */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <button
+              className="btn btn-primary btn-lg"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('application/array', 'array');
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+              onClick={onArrayClick}
+              title="Drag onto canvas or click to add array"
+              style={{ cursor: 'grab' }}
+              onMouseDown={(e) => e.currentTarget.style.cursor = 'grabbing'}
+              onMouseUp={(e) => e.currentTarget.style.cursor = 'grab'}
+            >
+              Add Array
+            </button>
+            <div className="font-control" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span className="font-label" style={{ minWidth: '35px' }}>Size:</span>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onArraySizeDecrease}
+                title="Decrease array size"
+                style={{ padding: '3px 6px', minWidth: 'auto' }}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                className="font-size-input"
+                value={arraySize}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  onArraySizeChange(Math.min(Math.max(value, 1), 20));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.target.blur();
+                  }
+                }}
+                min="1"
+                max="20"
+                style={{
+                  width: '40px',
+                  textAlign: 'center',
+                  padding: '3px',
+                  border: '1px solid #ddd',
+                  borderRadius: '3px',
+                  fontSize: '11px'
+                }}
+              />
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onArraySizeIncrease}
+                title="Increase array size"
+                style={{ padding: '3px 6px', minWidth: 'auto' }}
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Add Tree with Size Control */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <button
+              className="btn btn-secondary"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('application/structure', 'tree');
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+              onClick={() => onAddStructure?.('tree')}
+              title="Drag onto canvas or click to add tree"
+              style={{ cursor: 'grab' }}
+              onMouseDown={(e) => e.currentTarget.style.cursor = 'grabbing'}
+              onMouseUp={(e) => e.currentTarget.style.cursor = 'grab'}
+            >
+              Tree
+            </button>
+            <div className="font-control" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span className="font-label" style={{ minWidth: '35px' }}>Size:</span>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onTreeSizeDecrease}
+                title="Decrease tree size"
+                style={{ padding: '3px 6px', minWidth: 'auto' }}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                className="font-size-input"
+                value={treeSize}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  onTreeSizeChange(Math.min(Math.max(value, 1), 20));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.target.blur();
+                  }
+                }}
+                min="1"
+                max="20"
+                style={{
+                  width: '40px',
+                  textAlign: 'center',
+                  padding: '3px',
+                  border: '1px solid #ddd',
+                  borderRadius: '3px',
+                  fontSize: '11px'
+                }}
+              />
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onTreeSizeIncrease}
+                title="Increase tree size"
+                style={{ padding: '3px 6px', minWidth: 'auto' }}
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Add Graph with Size Control */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <button
+              className="btn btn-secondary"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData('application/structure', 'graph');
+                e.dataTransfer.effectAllowed = 'copy';
+              }}
+              onClick={() => onAddStructure?.('graph')}
+              title="Drag onto canvas or click to add graph"
+              style={{ cursor: 'grab' }}
+              onMouseDown={(e) => e.currentTarget.style.cursor = 'grabbing'}
+              onMouseUp={(e) => e.currentTarget.style.cursor = 'grab'}
+            >
+              Graph
+            </button>
+            <div className="font-control" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span className="font-label" style={{ minWidth: '35px' }}>Size:</span>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onGraphSizeDecrease}
+                title="Decrease graph size"
+                style={{ padding: '3px 6px', minWidth: 'auto' }}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                className="font-size-input"
+                value={graphSize}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  onGraphSizeChange(Math.min(Math.max(value, 1), 20));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.target.blur();
+                  }
+                }}
+                min="1"
+                max="20"
+                style={{
+                  width: '40px',
+                  textAlign: 'center',
+                  padding: '3px',
+                  border: '1px solid #ddd',
+                  borderRadius: '3px',
+                  fontSize: '11px'
+                }}
+              />
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onGraphSizeIncrease}
+                title="Increase graph size"
+                style={{ padding: '3px 6px', minWidth: 'auto' }}
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Add Linked List with Type and Size Control */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+            <div className="font-control" style={{ display: 'flex', gap: '3px' }}>
+              <select
+                className="background-select"
+                value={linkedListType}
+                onChange={(e) => onLinkedListTypeChange(e.target.value)}
+                title="Select linked list type"
+                style={{ padding: '4px 6px', fontSize: '10px' }}
+              >
+                <option value="singly">Singly</option>
+                <option value="doubly">Doubly</option>
+              </select>
+              <button
+                className="btn btn-secondary"
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('application/structure', `linked-list:${linkedListType}`);
+                  e.dataTransfer.effectAllowed = 'copy';
+                }}
+                onClick={() => onAddStructure?.(`linked-list:${linkedListType}`)}
+                title="Drag onto canvas or click to add linked list"
+                style={{ cursor: 'grab' }}
+                onMouseDown={(e) => e.currentTarget.style.cursor = 'grabbing'}
+                onMouseUp={(e) => e.currentTarget.style.cursor = 'grab'}
+              >
+                Linked List
+              </button>
+            </div>
+            <div className="font-control" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+              <span className="font-label" style={{ minWidth: '35px' }}>Size:</span>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onLinkedListSizeDecrease}
+                title="Decrease linked list size"
+                style={{ padding: '3px 6px', minWidth: 'auto' }}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                className="font-size-input"
+                value={linkedListSize}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value) || 1;
+                  onLinkedListSizeChange(Math.min(Math.max(value, 1), 20));
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.target.blur();
+                  }
+                }}
+                min="1"
+                max="20"
+                style={{
+                  width: '40px',
+                  textAlign: 'center',
+                  padding: '3px',
+                  border: '1px solid #ddd',
+                  borderRadius: '3px',
+                  fontSize: '11px'
+                }}
+              />
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={onLinkedListSizeIncrease}
+                title="Increase linked list size"
+                style={{ padding: '3px 6px', minWidth: 'auto' }}
+              >
+                +
+              </button>
+            </div>
+          </div>
         </div>
 
         <div className="separator"></div>

@@ -16,6 +16,12 @@
   color: #667eea;
 }
 
+.shapes-subtitle {
+  margin-top: -6px;
+  font-size: 11px;
+  color: #8a8a8a;
+}
+
 .shape-color {
   display: flex;
   align-items: center;

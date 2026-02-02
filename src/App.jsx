@@ -18,6 +18,12 @@ function App() {
   const [selectedColor, setSelectedColor] = useState('#FFD700');
   const [infoMessage, setInfoMessage] = useState('');
   const [textFontSize, setTextFontSize] = useState(14);
+  const [arraySize, setArraySize] = useState(5);
+  const [treeSize, setTreeSize] = useState(5);
+  const [graphSize, setGraphSize] = useState(5);
+  const [linkedListSize, setLinkedListSize] = useState(5);
+  const [linkedListType, setLinkedListType] = useState('singly');
+  const [structures, setStructures] = useState([]);
   const [textColor, setTextColor] = useState('#000000');
   const [textFont, setTextFont] = useState('Arial');
   const [canvasBackground, setCanvasBackground] = useState('white');
@@ -53,6 +59,7 @@ function App() {
       const state = history[newIndex];
       setArrays(state.arrays);
       setShapes(state.shapes);
+      setStructures(state.structures);
       setTextAnnotations(state.textAnnotations);
       setHistoryIndex(newIndex);
       showInfo('Undo');
@@ -65,6 +72,7 @@ function App() {
       const state = history[newIndex];
       setArrays(state.arrays);
       setShapes(state.shapes);
+      setStructures(state.structures);
       setTextAnnotations(state.textAnnotations);
       setHistoryIndex(newIndex);
       showInfo('Redo');
@@ -75,12 +83,12 @@ function App() {
   useEffect(() => {
     if (history.length === 0 || historyIndex === -1) {
       // Initialize history with first state
-      setHistory([{ arrays, textAnnotations }]);
+      setHistory([{ arrays, shapes, structures, textAnnotations }]);
       setHistoryIndex(0);
-    } else if (JSON.stringify(history[historyIndex]) !== JSON.stringify({ arrays, textAnnotations })) {
+    } else if (JSON.stringify(history[historyIndex]) !== JSON.stringify({ arrays, shapes, structures, textAnnotations })) {
       // Save new state to history
       const newHistory = history.slice(0, historyIndex + 1);
-      newHistory.push({ arrays, textAnnotations });
+      newHistory.push({ arrays, shapes, structures, textAnnotations });
       if (newHistory.length > maxHistorySize) {
         newHistory.shift();
       } else {
@@ -88,7 +96,7 @@ function App() {
       }
       setHistory(newHistory);
     }
-  }, [arrays, textAnnotations, history, historyIndex]);
+  }, [arrays, shapes, structures, textAnnotations, history, historyIndex]);
 
   // Keyboard shortcuts for undo/redo
   useEffect(() => {
@@ -129,10 +137,108 @@ function App() {
     showInfo(`Added array #${arrays.length + 1} (size ${size})`);
   };
 
+  const handleDropArray = (x, y) => {
+    const newId = Date.now();
+    const newArray = {
+      id: newId,
+      size: arraySize,
+      values: new Array(arraySize).fill(''),
+      highlights: {},
+      offsetX: x - 90,
+      offsetY: y - (120 + arrays.length * 148)
+    };
+    setArrays((prev) => [...prev, newArray]);
+    setActiveArrayId(newId);
+    showInfo(`Added array #${arrays.length + 1} (size ${arraySize})`);
+  };
+
   const handleArrayMove = (arrayId, offsetX, offsetY) => {
     setArrays((prev) => prev.map((arr) => (
       arr.id === arrayId ? { ...arr, offsetX, offsetY } : arr
     )));
+  };
+
+  const handleArrayResize = (arrayId, scaleX, scaleY) => {
+    setArrays((prev) => prev.map((arr) => (
+      arr.id === arrayId ? { ...arr, scaleX: scaleX || 1, scaleY: scaleY || 1 } : arr
+    )));
+  };
+
+  const getNextStructurePosition = () => {
+    const offset = structures.length * 30;
+    return { x: 160 + offset, y: 160 + offset };
+  };
+
+  const handleAddStructure = (type, size, listType = null) => {
+    const newId = Date.now();
+    const pos = getNextStructurePosition();
+    const isLinkedList = type === 'linked-list';
+    const actualListType = listType || linkedListType;
+    const newStructure = {
+      id: newId,
+      type,
+      subType: isLinkedList ? actualListType : null,
+      size,
+      values: isLinkedList 
+        ? Array.from({ length: size }, () => 
+            actualListType === 'doubly' 
+              ? { prev: '', data: '', next: '' }
+              : { data: '', next: '' }
+          )
+        : new Array(size).fill(''),
+      x: pos.x,
+      y: pos.y,
+      scaleX: 1,
+      scaleY: 1
+    };
+    setStructures((prev) => [...prev, newStructure]);
+    showInfo(`Added ${type.replace('-', ' ')} (size ${size})`);
+  };
+
+  const handleDropStructure = (type, x, y, size, listType = null) => {
+    const newId = Date.now();
+    const isLinkedList = type === 'linked-list';
+    const actualListType = listType || linkedListType;
+    const newStructure = {
+      id: newId,
+      type,
+      subType: isLinkedList ? actualListType : null,
+      size,
+      values: isLinkedList 
+        ? Array.from({ length: size }, () => 
+            actualListType === 'doubly' 
+              ? { prev: '', data: '', next: '' }
+              : { data: '', next: '' }
+          )
+        : new Array(size).fill(''),
+      x,
+      y,
+      scaleX: 1,
+      scaleY: 1
+    };
+    setStructures((prev) => [...prev, newStructure]);
+    showInfo(`Added ${type.replace('-', ' ')} (size ${size})`);
+  };
+
+  const handleStructureMove = (id, x, y) => {
+    setStructures((prev) => prev.map((item) => (
+      item.id === id ? { ...item, x, y } : item
+    )));
+  };
+
+  const handleStructureResize = (id, scaleX, scaleY) => {
+    setStructures((prev) => prev.map((item) => (
+      item.id === id ? { ...item, scaleX: scaleX || 1, scaleY: scaleY || 1 } : item
+    )));
+  };
+
+  const handleStructureValueChange = (id, index, value) => {
+    setStructures((prev) => prev.map((item) => {
+      if (item.id !== id) return item;
+      const values = Array.isArray(item.values) ? [...item.values] : new Array(item.size).fill('');
+      values[index] = value;
+      return { ...item, values };
+    }));
   };
 
   const handleUpdateCellValue = (arrayId, index, value) => {
@@ -162,6 +268,21 @@ function App() {
 
   const handleRemoveText = (id) => {
     setTextAnnotations(textAnnotations.filter(ann => ann.id !== id));
+  };
+
+  const handleDeleteArray = (id) => {
+    setArrays((prev) => prev.filter((arr) => arr.id !== id));
+    showInfo('Array deleted');
+  };
+
+  const handleDeleteStructure = (id) => {
+    setStructures((prev) => prev.filter((struct) => struct.id !== id));
+    showInfo('Structure deleted');
+  };
+
+  const handleDeleteShape = (id) => {
+    setShapes((prev) => prev.filter((shape) => shape.id !== id));
+    showInfo('Shape deleted');
   };
 
   const handleUpdateTextPosition = (id, x, y) => {
@@ -396,6 +517,38 @@ function App() {
     setTextFontSize((prev) => Math.max(prev - 2, 8));
   };
 
+  const handleArraySizeIncrease = () => {
+    setArraySize((prev) => Math.min(prev + 1, 20));
+  };
+
+  const handleArraySizeDecrease = () => {
+    setArraySize((prev) => Math.max(prev - 1, 1));
+  };
+
+  const handleTreeSizeIncrease = () => {
+    setTreeSize((prev) => Math.min(prev + 1, 20));
+  };
+
+  const handleTreeSizeDecrease = () => {
+    setTreeSize((prev) => Math.max(prev - 1, 1));
+  };
+
+  const handleGraphSizeIncrease = () => {
+    setGraphSize((prev) => Math.min(prev + 1, 20));
+  };
+
+  const handleGraphSizeDecrease = () => {
+    setGraphSize((prev) => Math.max(prev - 1, 1));
+  };
+
+  const handleLinkedListSizeIncrease = () => {
+    setLinkedListSize((prev) => Math.min(prev + 1, 20));
+  };
+
+  const handleLinkedListSizeDecrease = () => {
+    setLinkedListSize((prev) => Math.max(prev - 1, 1));
+  };
+
   const handleTextFontSizeChange = (size) => {
     setTextFontSize(size);
   };
@@ -409,6 +562,32 @@ function App() {
         onTextFontDecrease={handleTextFontDecrease}
         onTextFontSizeChange={handleTextFontSizeChange}
         textFontSize={textFontSize}
+        arraySize={arraySize}
+        onArraySizeIncrease={handleArraySizeIncrease}
+        onArraySizeDecrease={handleArraySizeDecrease}
+        onArraySizeChange={setArraySize}
+        treeSize={treeSize}
+        onTreeSizeIncrease={handleTreeSizeIncrease}
+        onTreeSizeDecrease={handleTreeSizeDecrease}
+        onTreeSizeChange={setTreeSize}
+        graphSize={graphSize}
+        onGraphSizeIncrease={handleGraphSizeIncrease}
+        onGraphSizeDecrease={handleGraphSizeDecrease}
+        onGraphSizeChange={setGraphSize}
+        linkedListSize={linkedListSize}
+        onLinkedListSizeIncrease={handleLinkedListSizeIncrease}
+        onLinkedListSizeDecrease={handleLinkedListSizeDecrease}
+        onLinkedListSizeChange={setLinkedListSize}
+        linkedListType={linkedListType}
+        onLinkedListTypeChange={setLinkedListType}
+        onAddStructure={(type) => {
+          if (type === 'tree') handleAddStructure('tree', treeSize);
+          if (type === 'graph') handleAddStructure('graph', graphSize);
+          if (type.startsWith('linked-list')) {
+            const listType = type.includes(':') ? type.split(':')[1] : linkedListType;
+            handleAddStructure('linked-list', linkedListSize, listType);
+          }
+        }}
         onClearClick={handleClearAll}
         onInfoDisplay={showInfo}
         canUndo={canUndo}
@@ -445,6 +624,7 @@ function App() {
         <Canvas
           ref={canvasRef}
           arrays={arrays}
+          structures={structures}
           shapes={shapes}
           selectedShapeId={selectedShapeId}
           onSelectShape={handleShapeSelect}
@@ -452,11 +632,27 @@ function App() {
           activeArrayId={activeArrayId}
           onArrayActivate={setActiveArrayId}
           onArrayMove={handleArrayMove}
+          onArrayResize={handleArrayResize}
+          onDropArray={handleDropArray}
+          onDeleteArray={handleDeleteArray}
+          onStructureMove={handleStructureMove}
+          onStructureResize={handleStructureResize}
+          onStructureValueChange={handleStructureValueChange}
+          onDeleteStructure={handleDeleteStructure}
+          onDropStructure={(type, x, y) => {
+            if (type === 'tree') handleDropStructure('tree', x, y, treeSize);
+            if (type === 'graph') handleDropStructure('graph', x, y, graphSize);
+            if (type.startsWith('linked-list')) {
+              const listType = type.includes(':') ? type.split(':')[1] : linkedListType;
+              handleDropStructure('linked-list', x, y, linkedListSize, listType);
+            }
+          }}
           textAnnotations={textAnnotations}
           onCellValueChange={handleCellValueChange}
           onCellRightClick={handleShowHighlightModal}
           onCellHover={showInfo}
           onDropShape={handleDropShape}
+          onDeleteShape={handleDeleteShape}
           onTextMove={handleUpdateTextPosition}
           onTextRemove={handleRemoveText}
           onAddTextAtPosition={handleAddTextAtPosition}
@@ -466,6 +662,7 @@ function App() {
           canvasFont={canvasFont}
           textColor={textColor}
           textStyle={textStyle}
+          textFontSize={textFontSize}
         />
       </div>
 
