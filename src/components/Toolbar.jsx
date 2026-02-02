@@ -147,7 +147,7 @@ function Toolbar({
           {/* Add Tree with Size Control */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <button
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-tree"
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData('application/structure', 'tree');
@@ -209,7 +209,7 @@ function Toolbar({
           {/* Add Graph with Size Control */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
             <button
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-graph"
               draggable
               onDragStart={(e) => {
                 e.dataTransfer.setData('application/structure', 'graph');
@@ -282,7 +282,7 @@ function Toolbar({
                 <option value="doubly">Doubly</option>
               </select>
               <button
-                className="btn btn-secondary"
+                className="btn btn-secondary btn-linked-list"
                 draggable
                 onDragStart={(e) => {
                   e.dataTransfer.setData('application/structure', `linked-list:${linkedListType}`);

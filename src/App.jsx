@@ -26,11 +26,11 @@ function App() {
   const [structures, setStructures] = useState([]);
   const [textColor, setTextColor] = useState('#000000');
   const [textFont, setTextFont] = useState('Arial');
-  const [canvasBackground, setCanvasBackground] = useState('white');
+  const [canvasBackground, setCanvasBackground] = useState('grid');
   const [canvasColor, setCanvasColor] = useState('white');
   const [canvasFont, setCanvasFont] = useState('Arial');
   const [textStyle, setTextStyle] = useState('none');
-  const [theme, setTheme] = useState('white');
+  const [theme, setTheme] = useState('grid');
   
   // History management
   const [history, setHistory] = useState([]);

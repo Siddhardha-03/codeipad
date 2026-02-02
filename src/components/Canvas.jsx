@@ -76,18 +76,21 @@ const Canvas = React.forwardRef(({
     const baseProps = {
       none: { shadowColor: 'transparent', shadowBlur: 0, shadowOffsetX: 0, shadowOffsetY: 0 },
       neon: { 
-        shadowColor: '#00ff00', 
-        shadowBlur: 15, 
+        shadowColor: '#5e7ded', 
+        shadowBlur: 2, 
         shadowOffsetX: 0, 
         shadowOffsetY: 0,
-        stroke: '#00ff00',
-        strokeWidth: 0.5
+        stroke: '#5e7ded',
+        strokeWidth: 0.3
       },
       'outer-glow': {
         shadowColor: '#667eea',
-        shadowBlur: 20,
+        shadowBlur: 3,
         shadowOffsetX: 0,
-        shadowOffsetY: 0
+        shadowOffsetY: 0,
+        stroke: '#667eea',
+        strokeWidth: 0.15,
+        shadowForStrokeEnabled: true
       },
       'soft-glow': {
         shadowColor: '#ffd700',
@@ -105,7 +108,7 @@ const Canvas = React.forwardRef(({
         strokeWidth: 0.3
       },
       'light-beam': {
-        shadowColor: '#ffff00',
+        shadowColor: '#667eea',
         shadowBlur: 25,
         shadowOffsetX: 0,
         shadowOffsetY: 0,
