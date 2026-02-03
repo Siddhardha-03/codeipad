@@ -43,11 +43,14 @@ const Canvas = React.forwardRef(({
   const transformerRef = useRef(null);
   const arrayTransformerRef = useRef(null);
   const structureTransformerRef = useRef(null);
+  const textTransformerRef = useRef(null);
   const shapeRefs = useRef({});
   const arrayRefs = useRef({});
   const structureRefs = useRef({});
+  const textRefs = useRef({});
   const [stageSize, setStageSize] = useState({ width: 800, height: 600 });
   const [editingCell, setEditingCell] = useState(null);
+  const [selectedTextId, setSelectedTextId] = useState(null);
   const [editingValue, setEditingValue] = useState('');
   const [selectedArrayId, setSelectedArrayId] = useState(null);
   const [isDraggingObject, setIsDraggingObject] = useState(false);
@@ -450,6 +453,20 @@ const Canvas = React.forwardRef(({
     structureTransformerRef.current.getLayer()?.batchDraw();
   }, [selectedStructureId]);
 
+  useEffect(() => {
+    if (!textTransformerRef.current) return;
+    let node = null;
+    if (selectedTextId) {
+      node = textRefs.current[selectedTextId];
+    }
+    if (node) {
+      textTransformerRef.current.nodes([node]);
+    } else {
+      textTransformerRef.current.nodes([]);
+    }
+    textTransformerRef.current.getLayer()?.batchDraw();
+  }, [selectedTextId, textAnnotations]);
+
   const handleArrayResizeEnd = (arrayId) => {
     const node = arrayRefs.current[arrayId];
     if (!node) return;
@@ -482,6 +499,28 @@ const Canvas = React.forwardRef(({
       node.scaleY(1);
       // Keep structure selected after resize
       setSelectedStructureId(structureId);
+    }
+  };
+
+  const handleSelectText = (textId) => {
+    setSelectedTextId(textId);
+    setSelectedArrayId(null);
+    setSelectedStructureId(null);
+    onSelectShape(null);
+  };
+
+  const handleTextTransformEnd = (textId) => {
+    const node = textRefs.current[textId];
+    if (!node) return;
+
+    const scaleX = node.scaleX();
+    const scaleY = node.scaleY();
+    const rotation = node.rotation();
+
+    // Update text annotation with transform properties
+    const ann = textAnnotations.find(a => a.id === textId);
+    if (ann) {
+      onTextMove(textId, node.x(), node.y(), scaleX, scaleY, rotation);
     }
   };
 
@@ -1174,6 +1213,7 @@ const Canvas = React.forwardRef(({
             onSelectShape(null);
             setSelectedArrayId(null);
             setSelectedStructureId(null);
+            setSelectedTextId(null);
             setIsDraggingObject(false);
           } else {
             setIsDraggingObject(true);
@@ -1228,6 +1268,7 @@ const Canvas = React.forwardRef(({
                   points={shape.points}
                   stroke={shape.stroke}
                   strokeWidth={shape.strokeWidth}
+                  hitStrokeWidth={20}
                   {...shapeStyleProps}
                   draggable
                   onClick={() => handleSelectShapeId(shape.id)}
@@ -1250,6 +1291,7 @@ const Canvas = React.forwardRef(({
                   stroke={shape.stroke}
                   fill={shape.stroke}
                   strokeWidth={shape.strokeWidth}
+                  hitStrokeWidth={20}
                   pointerLength={shape.pointerLength}
                   pointerWidth={shape.pointerWidth}
                   {...shapeStyleProps}
@@ -1289,6 +1331,7 @@ const Canvas = React.forwardRef(({
                     data={pathData}
                     stroke={shape.stroke}
                     strokeWidth={shape.strokeWidth}
+                    hitStrokeWidth={20}
                     {...shapeStyleProps}
                   />
                   <Line
@@ -1299,6 +1342,7 @@ const Canvas = React.forwardRef(({
                     fill={shape.stroke}
                     stroke={shape.stroke}
                     strokeWidth={1}
+                    hitStrokeWidth={20}
                     {...shapeStyleProps}
                   />
                 </Group>
@@ -1490,40 +1534,40 @@ const Canvas = React.forwardRef(({
           {textAnnotations.map((ann) => {
             const styleProps = getTextStyleProps(ann.style);
             return (
-              <Group
+              <Text
                 key={`text-${ann.id}`}
+                ref={(node) => { textRefs.current[ann.id] = node; }}
                 x={ann.x}
                 y={ann.y}
+                text={ann.text}
+                fontSize={ann.fontSize}
+                fontFamily={ann.font || canvasFont}
+                fill={ann.color || '#000'}
+                wrap="none"
+                scaleX={ann.scaleX || 1}
+                scaleY={ann.scaleY || 1}
+                rotation={ann.rotation || 0}
+                {...styleProps}
                 draggable
+                onClick={() => handleSelectText(ann.id)}
+                onTap={() => handleSelectText(ann.id)}
                 onDragEnd={(e) => {
-                  onTextMove(ann.id, e.target.x(), e.target.y());
+                  onTextMove(ann.id, e.target.x(), e.target.y(), ann.scaleX || 1, ann.scaleY || 1, ann.rotation || 0);
                 }}
-                onClick={(e) => {
-                  if (e.evt.detail === 2) {
-                    onTextRemove(ann.id);
-                  }
+                onTransformEnd={() => handleTextTransformEnd(ann.id)}
+                onDblClick={(e) => {
+                  e.cancelBubble = true;
+                  handleTextDoubleClick(ann.id, ann.text);
                 }}
                 onContextMenu={(e) => handleContextMenu(e, 'text', ann.id)}
-                cursor="move"
-              >
-                <Text
-                  x={0}
-                  y={0}
-                  text={ann.text}
-                  fontSize={ann.fontSize}
-                  fontFamily={ann.font || canvasFont}
-                  fill={ann.color || '#000'}
-                  wrap="none"
-                  {...styleProps}
-                  onDblClick={(e) => {
-                    e.cancelBubble = true;
-                    handleTextDoubleClick(ann.id, ann.text);
-                  }}
-                  cursor="text"
-                />
-              </Group>
+              />
             );
           })}
+          <Transformer
+            ref={textTransformerRef}
+            rotateEnabled
+            enabledAnchors={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'middle-left', 'middle-right', 'top-center', 'bottom-center']}
+          />
         </Layer>
       </Stage>
     </div>

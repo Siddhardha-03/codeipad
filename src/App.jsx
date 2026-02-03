@@ -285,9 +285,9 @@ function App() {
     showInfo('Shape deleted');
   };
 
-  const handleUpdateTextPosition = (id, x, y) => {
+  const handleUpdateTextPosition = (id, x, y, scaleX = 1, scaleY = 1, rotation = 0) => {
     setTextAnnotations(textAnnotations.map(ann =>
-      ann.id === id ? { ...ann, x, y } : ann
+      ann.id === id ? { ...ann, x, y, scaleX, scaleY, rotation } : ann
     ));
   };
 

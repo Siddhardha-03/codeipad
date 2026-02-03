@@ -80,7 +80,7 @@
 .shape-icon {
   width: 22px;
   height: 22px;
-  border: 1.5px solid var(--shape-color, #667eea);
+  border: 1.5px solid #667eea;
   background: #ffffff;
   flex-shrink: 0;
 }
@@ -96,14 +96,14 @@
 .shape-line {
   height: 4px;
   border: none;
-  background: var(--shape-color, #667eea);
+  background: #667eea;
 }
 
 .shape-vline {
   width: 4px;
   height: 24px;
   border: none;
-  background: var(--shape-color, #667eea);
+  background: #667eea;
 }
 
 .shape-arrowUp,
@@ -115,11 +115,11 @@
 }
 
 .shape-arrowUp {
-  border-bottom: 14px solid var(--shape-color, #667eea);
+  border-bottom: 14px solid #667eea;
 }
 
 .shape-arrowDown {
-  border-top: 14px solid var(--shape-color, #667eea);
+  border-top: 14px solid #667eea;
 }
 
 .shape-arrowLeft,
@@ -131,17 +131,17 @@
 }
 
 .shape-arrowLeft {
-  border-right: 14px solid var(--shape-color, #667eea);
+  border-right: 14px solid #667eea;
 }
 
 .shape-arrowRight {
-  border-left: 14px solid var(--shape-color, #667eea);
+  border-left: 14px solid #667eea;
 }
 
 .shape-arcArrow {
   width: 20px;
   height: 20px;
-  border: 3px solid var(--shape-color, #667eea);
+  border: 3px solid #667eea;
   border-right-color: transparent;
   border-bottom-color: transparent;
   border-radius: 50%;
@@ -155,7 +155,7 @@
   height: 0;
   border-left: 4px solid transparent;
   border-right: 0;
-  border-top: 6px solid var(--shape-color, #667eea);
+  border-top: 6px solid #667eea;
   top: -4px;
   left: -4px;
   transform: rotate(-45deg);
@@ -164,7 +164,7 @@
 .shape-arcArrowUp {
   width: 20px;
   height: 20px;
-  border: 3px solid var(--shape-color, #667eea);
+  border: 3px solid #667eea;
   border-right-color: transparent;
   border-bottom-color: transparent;
   border-radius: 50%;
@@ -179,7 +179,7 @@
   height: 0;
   border-left: 4px solid transparent;
   border-right: 0;
-  border-top: 6px solid var(--shape-color, #667eea);
+  border-top: 6px solid #667eea;
   top: -4px;
   left: -4px;
 }
@@ -187,7 +187,7 @@
 .shape-arcArrowDown {
   width: 20px;
   height: 20px;
-  border: 3px solid var(--shape-color, #667eea);
+  border: 3px solid #667eea;
   border-left-color: transparent;
   border-top-color: transparent;
   border-radius: 50%;
@@ -202,7 +202,7 @@
   height: 0;
   border-right: 4px solid transparent;
   border-left: 0;
-  border-bottom: 6px solid var(--shape-color, #667eea);
+  border-bottom: 6px solid #667eea;
   bottom: -4px;
   right: -4px;
 }
