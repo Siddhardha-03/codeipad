@@ -456,6 +456,7 @@ function App() {
   const [language, setLanguage] = useState('plaintext');
   const [theme, setTheme] = useState('light');
   const [editorReady, setEditorReady] = useState(false);
+  const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
 
   const [selectedTool, setSelectedTool] = useState('select');
   const [strokeColor, setStrokeColor] = useState('#2563eb');
@@ -1045,6 +1046,122 @@ function App() {
     setSelectedTool(toolType);
   }, []);
 
+  const handleToolSelect = useCallback((toolType) => {
+    setSelectedTool(toolType);
+    setMobileToolsOpen(false);
+  }, []);
+
+  const toggleMobileTools = useCallback(() => {
+    setMobileToolsOpen((current) => !current);
+  }, []);
+
+  const renderToolbarControls = () => (
+    <>
+      {TOOL_ITEMS.map((tool) => (
+        <button
+          key={tool.type}
+          type="button"
+          title={tool.label}
+          draggable
+          onDragStart={(e) => handleToolDragStart(e, tool.type)}
+          onClick={() => handleToolSelect(tool.type)}
+          className={`tool-btn ${selectedTool === tool.type ? 'active' : ''}`}
+        >
+          {tool.icon}
+        </button>
+      ))}
+
+      <div className="toolbar-divider" />
+
+      <select
+        value={language}
+        onChange={(e) => setLanguage(e.target.value)}
+        title="Language"
+        className="toolbar-select"
+      >
+        {LANGUAGES.map((item) => (
+          <option key={item.value} value={item.value}>{item.label}</option>
+        ))}
+      </select>
+
+      <button
+        type="button"
+        className="toolbar-icon-btn"
+        onClick={() => setEditorFontSize((prev) => clamp(prev - 1, 10, 72))}
+        title="Decrease Font"
+      >
+        A-
+      </button>
+      <select
+        value={editorFontSize}
+        onChange={(e) => setEditorFontSize(Number(e.target.value))}
+        title="Editor Font Size"
+        className="toolbar-select"
+      >
+        {FONT_SIZE_PRESETS.map((size) => (
+          <option key={size} value={size}>{size}px</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="toolbar-icon-btn"
+        onClick={() => setEditorFontSize((prev) => clamp(prev + 1, 10, 72))}
+        title="Increase Font"
+      >
+        A+
+      </button>
+
+      <select
+        value={blockSize}
+        onChange={(e) => setBlockSize(Number(e.target.value))}
+        title="Block Size"
+        className="toolbar-select"
+      >
+        {BLOCK_SIZE_PRESETS.map((size) => (
+          <option key={size} value={size}>B{size}</option>
+        ))}
+      </select>
+
+      <select
+        value={elementCount}
+        onChange={(e) => setElementCount(Number(e.target.value))}
+        title="Elements Count"
+        className="toolbar-select"
+      >
+        {ELEMENT_COUNT_PRESETS.map((count) => (
+          <option key={count} value={count}>N{count}</option>
+        ))}
+      </select>
+
+      <input
+        type="color"
+        value={strokeColor}
+        onChange={(e) => setStrokeColor(e.target.value)}
+        title="Stroke Color"
+        className="toolbar-color"
+      />
+
+      <input
+        type="color"
+        value={fillColor}
+        onChange={(e) => setFillColor(e.target.value)}
+        title="Fill Color"
+        className="toolbar-color"
+      />
+
+      <select
+        value={strokeWidth}
+        onChange={(e) => setStrokeWidth(Number(e.target.value))}
+        title="Stroke Width"
+        className="toolbar-select"
+      >
+        {SIZE_PRESETS.map((size) => (
+          <option key={size} value={size}>{size}px</option>
+        ))}
+      </select>
+    </>
+  );
+
   const handleDropOnCanvas = useCallback((e) => {
     e.preventDefault();
     const toolType = e.dataTransfer.getData('application/x-codeipad-tool');
@@ -1119,116 +1236,31 @@ function App() {
         </div>
 
         <div className="toolbar-center">
-          {TOOL_ITEMS.map((tool) => (
-            <button
-              key={tool.type}
-              type="button"
-              title={tool.label}
-              draggable
-              onDragStart={(e) => handleToolDragStart(e, tool.type)}
-              onClick={() => setSelectedTool(tool.type)}
-              className={`tool-btn ${selectedTool === tool.type ? 'active' : ''}`}
-            >
-              {tool.icon}
-            </button>
-          ))}
-
-          <div className="toolbar-divider" />
-
-          <select
-            value={language}
-            onChange={(e) => setLanguage(e.target.value)}
-            title="Language"
-            className="toolbar-select"
-          >
-            {LANGUAGES.map((item) => (
-              <option key={item.value} value={item.value}>{item.label}</option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            className="toolbar-icon-btn"
-            onClick={() => setEditorFontSize((prev) => clamp(prev - 1, 10, 72))}
-            title="Decrease Font"
-          >
-            A-
-          </button>
-          <select
-            value={editorFontSize}
-            onChange={(e) => setEditorFontSize(Number(e.target.value))}
-            title="Editor Font Size"
-            className="toolbar-select"
-          >
-            {FONT_SIZE_PRESETS.map((size) => (
-              <option key={size} value={size}>{size}px</option>
-            ))}
-          </select>
-          <button
-            type="button"
-            className="toolbar-icon-btn"
-            onClick={() => setEditorFontSize((prev) => clamp(prev + 1, 10, 72))}
-            title="Increase Font"
-          >
-            A+
-          </button>
-
-          <select
-            value={blockSize}
-            onChange={(e) => setBlockSize(Number(e.target.value))}
-            title="Block Size"
-            className="toolbar-select"
-          >
-            {BLOCK_SIZE_PRESETS.map((size) => (
-              <option key={size} value={size}>B{size}</option>
-            ))}
-          </select>
-
-          <select
-            value={elementCount}
-            onChange={(e) => setElementCount(Number(e.target.value))}
-            title="Elements Count"
-            className="toolbar-select"
-          >
-            {ELEMENT_COUNT_PRESETS.map((count) => (
-              <option key={count} value={count}>N{count}</option>
-            ))}
-          </select>
-
-          <input
-            type="color"
-            value={strokeColor}
-            onChange={(e) => setStrokeColor(e.target.value)}
-            title="Stroke Color"
-            className="toolbar-color"
-          />
-
-          <input
-            type="color"
-            value={fillColor}
-            onChange={(e) => setFillColor(e.target.value)}
-            title="Fill Color"
-            className="toolbar-color"
-          />
-
-          <select
-            value={strokeWidth}
-            onChange={(e) => setStrokeWidth(Number(e.target.value))}
-            title="Stroke Width"
-            className="toolbar-select"
-          >
-            {SIZE_PRESETS.map((size) => (
-              <option key={size} value={size}>{size}px</option>
-            ))}
-          </select>
+          {renderToolbarControls()}
         </div>
 
         <div className="toolbar-right">
           <button type="button" className="toolbar-icon-btn" onClick={handleUndo} disabled={history.index <= 0} title="Undo">↶</button>
           <button type="button" className="toolbar-icon-btn" onClick={handleRedo} disabled={history.index >= history.items.length - 1} title="Redo">↷</button>
+          <button
+            type="button"
+            className="toolbar-icon-btn mobile-tools-btn"
+            onClick={toggleMobileTools}
+            aria-expanded={mobileToolsOpen}
+            aria-controls="mobile-tools-panel"
+            title="Tools"
+          >
+            ☰
+          </button>
           <button type="button" className="toolbar-icon-btn" onClick={clearCanvas} title="Clear Canvas">✕</button>
           <button type="button" className="toolbar-icon-btn" onClick={exportJSON} title="Export JSON">↓</button>
           <button type="button" className="toolbar-icon-btn" onClick={toggleTheme} title="Toggle Theme">{theme === 'light' ? '🌙' : '☀'}</button>
+        </div>
+      </div>
+
+      <div className={`mobile-tools-panel ${mobileToolsOpen ? 'open' : ''}`} id="mobile-tools-panel" aria-hidden={!mobileToolsOpen}>
+        <div className="mobile-tools-panel-inner">
+          {renderToolbarControls()}
         </div>
       </div>
 

@@ -16,9 +16,10 @@ body,
 
 .app-shell {
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
   background: #f5f5f5;
   color: #1f2937;
   overflow: hidden;
@@ -34,6 +35,7 @@ body,
   position: relative;
   width: 100%;
   min-height: 0;
+  order: 1;
 }
 
 .editor-wrapper {
@@ -80,6 +82,7 @@ body,
   box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.04);
   height: 52px;
   flex-shrink: 0;
+  order: 0;
 }
 
 .app-shell[data-theme='dark'] .top-toolbar {
@@ -226,6 +229,10 @@ body,
   padding: 0;
 }
 
+.mobile-tools-btn {
+  display: none;
+}
+
 .toolbar-icon-btn:hover:not(:disabled) {
   background: rgba(37, 99, 235, 0.1);
   border-color: rgba(37, 99, 235, 0.3);
@@ -243,6 +250,17 @@ body,
   border-color: rgba(255, 255, 255, 0.12);
 }
 
+.mobile-tools-panel {
+  display: none;
+}
+
+.mobile-tools-panel-inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .status-bar {
   font-size: 0.85rem;
   color: #666;
@@ -250,10 +268,139 @@ body,
   background: rgba(255, 255, 255, 0.5);
   border-top: 1px solid rgba(0, 0, 0, 0.08);
   height: auto;
+  order: 2;
 }
 
 .app-shell[data-theme='dark'] .status-bar {
   background: rgba(30, 30, 30, 0.5);
   color: #aaa;
   border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    height: 100dvh;
+  }
+
+  .top-toolbar {
+    height: auto;
+    min-height: 52px;
+    padding: 8px 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    align-items: flex-start;
+  }
+
+  .toolbar-left {
+    min-width: 0;
+  }
+
+  .toolbar-center {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .toolbar-right {
+    margin-left: auto;
+  }
+}
+
+@media (max-width: 720px) {
+  .toolbar-center {
+    display: none;
+  }
+
+  .top-toolbar {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .toolbar-right {
+    gap: 4px;
+  }
+
+  .brand {
+    font-size: 0.88rem;
+  }
+
+  .tool-btn,
+  .toolbar-icon-btn,
+  .toolbar-select,
+  .toolbar-color {
+    height: 30px;
+  }
+
+  .tool-btn,
+  .toolbar-icon-btn {
+    width: 30px;
+    border-radius: 5px;
+    transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, opacity 0.18s ease;
+  }
+
+  .mobile-tools-btn {
+    display: inline-flex;
+  }
+
+  .toolbar-select {
+    min-width: 42px;
+    padding: 3px 6px;
+    font-size: 0.8rem;
+  }
+
+  .toolbar-color {
+    width: 30px;
+  }
+
+  .toolbar-divider {
+    height: 20px;
+    margin: 0 2px;
+  }
+
+  .status-bar {
+    padding: 4px 10px;
+    font-size: 0.78rem;
+  }
+
+  .editor-container {
+    min-height: 0;
+  }
+
+  .mobile-tools-panel {
+    display: block;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: max-height 0.28s ease, opacity 0.24s ease, transform 0.24s ease;
+    background: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(10px);
+  }
+
+  .app-shell[data-theme='dark'] .mobile-tools-panel {
+    background: rgba(30, 30, 30, 0.96);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
+  }
+
+  .mobile-tools-panel.open {
+    max-height: 240px;
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .mobile-tools-panel-inner {
+    padding: 10px;
+    justify-content: flex-start;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .mobile-tools-panel .toolbar-divider {
+    display: none;
+  }
 }
