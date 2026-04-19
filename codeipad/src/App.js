@@ -463,8 +463,30 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+const MonacoPane = React.memo(function MonacoPane({
+  language,
+  theme,
+  initialCode,
+  options,
+  onEditorMount,
+  onDrop,
+  onDragOver
+}) {
+  return (
+    <div className="editor-wrapper" onDrop={onDrop} onDragOver={onDragOver}>
+      <Editor
+        height="100%"
+        language={language}
+        theme={theme}
+        defaultValue={initialCode}
+        options={options}
+        onMount={onEditorMount}
+      />
+    </div>
+  );
+});
+
 function App() {
-  const [code, setCode] = useState(DEFAULT_CODE);
   const [language, setLanguage] = useState('javascript');
   const [theme, setTheme] = useState('light');
   const [editorReady, setEditorReady] = useState(false);
@@ -493,7 +515,7 @@ function App() {
   const resizeObserverRef = useRef(null);
   const codeHistoryTimerRef = useRef(null);
   const historyLockRef = useRef(false);
-  const latestStateRef = useRef({ code: DEFAULT_CODE, language: 'javascript', theme: 'light' });
+  const latestStateRef = useRef({ language: 'javascript', theme: 'light' });
   const shapesRef = useRef([]);
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
@@ -551,6 +573,7 @@ function App() {
   const captureSnapshot = useCallback(() => {
     return {
       ...latestStateRef.current,
+      code: monacoEditorRef.current?.getValue?.() ?? DEFAULT_CODE,
       shapes: JSON.parse(JSON.stringify(shapesRef.current)),
       editorFontSize,
       elementCount,
@@ -577,12 +600,15 @@ function App() {
     if (!snapshot) return;
 
     historyLockRef.current = true;
-    setCode(snapshot.code ?? DEFAULT_CODE);
     setLanguage(snapshot.language ?? 'javascript');
     setTheme(snapshot.theme ?? 'light');
     setEditorFontSize(snapshot.editorFontSize ?? 15);
     setElementCount(snapshot.elementCount ?? 5);
     setBlockSize(snapshot.blockSize ?? 60);
+
+    if (monacoEditorRef.current && typeof snapshot.code === 'string') {
+      monacoEditorRef.current.setValue(snapshot.code);
+    }
 
     const nextShapes = snapshot.shapes ?? [];
     shapesRef.current = nextShapes;
@@ -1003,8 +1029,8 @@ function App() {
   }, [activeShapeId, captureSnapshot, handleRedo, handleUndo, pushHistory, updateStatus]);
 
   useEffect(() => {
-    latestStateRef.current = { code, language, theme };
-  }, [code, language, theme]);
+    latestStateRef.current = { language, theme };
+  }, [language, theme]);
 
   useEffect(() => {
     if (!editorReady) return;
@@ -1015,7 +1041,7 @@ function App() {
     }, 450);
 
     return () => window.clearTimeout(codeHistoryTimerRef.current);
-  }, [captureSnapshot, code, editorReady, language, pushHistory, theme]);
+  }, [captureSnapshot, editorReady, language, pushHistory, theme]);
 
   const clearCanvas = useCallback(() => {
     shapesRef.current = [];
@@ -1079,26 +1105,20 @@ function App() {
   return (
     <div className="app-shell" data-theme={theme}>
       <div className="editor-container">
-        <div
-          className="editor-wrapper"
+        <MonacoPane
+          language={language}
+          theme={monacoTheme}
+          initialCode={DEFAULT_CODE}
+          options={editorOptions}
           onDrop={handleDropOnEditor}
           onDragOver={(e) => e.preventDefault()}
-        >
-          <Editor
-            height="100%"
-            language={language}
-            theme={monacoTheme}
-            value={code}
-            options={editorOptions}
-            onChange={(value) => setCode(value ?? '')}
-            onMount={(editor) => {
-              monacoEditorRef.current = editor;
-              setEditorReady(true);
-              syncCanvasViewportToEditor();
-              updateStatus('Editor ready');
-            }}
-          />
-        </div>
+          onEditorMount={(editor) => {
+            monacoEditorRef.current = editor;
+            setEditorReady(true);
+            syncCanvasViewportToEditor();
+            updateStatus('Editor ready');
+          }}
+        />
 
         <div
           className="canvas-layer"
