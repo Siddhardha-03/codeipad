@@ -21,17 +21,21 @@ const TOOL_ITEMS = [
   { type: 'double-arrow', label: 'Double Arrow', icon: '↔' },
   { type: 'curved-arrow', label: 'Curved Arrow', icon: '⤴' },
   { type: 'text', label: 'Text Note', icon: 'T' },
-  { type: 'array', label: 'Array', icon: '[]' },
+  { type: 'array', label: 'Array', icon: 'Arr' },
   { type: 'sll', label: 'Singly Linked List', icon: 'SLL' },
   { type: 'dll', label: 'Doubly Linked List', icon: 'DLL' },
   { type: 'tree', label: 'Tree', icon: '🌳' }
 ];
 
 const LANGUAGES = [
+  { value: 'plaintext', label: 'txt' },
   { value: 'javascript', label: 'JavaScript' },
   { value: 'typescript', label: 'TypeScript' },
   { value: 'jsx', label: 'JSX' },
   { value: 'tsx', label: 'TSX' },
+  { value: 'cpp', label: 'C++' },
+  { value: 'c', label: 'C' },
+  { value: 'java', label: 'Java' },
   { value: 'python', label: 'Python' },
   { value: 'json', label: 'JSON' },
   { value: 'html', label: 'HTML' },
@@ -449,7 +453,7 @@ const MonacoPane = React.memo(function MonacoPane({
 });
 
 function App() {
-  const [language, setLanguage] = useState('javascript');
+  const [language, setLanguage] = useState('plaintext');
   const [theme, setTheme] = useState('light');
   const [editorReady, setEditorReady] = useState(false);
 
@@ -1138,7 +1142,7 @@ function App() {
             className="toolbar-select"
           >
             {LANGUAGES.map((item) => (
-              <option key={item.value} value={item.value}>{item.label.substring(0, 3)}</option>
+              <option key={item.value} value={item.value}>{item.label}</option>
             ))}
           </select>
 
