@@ -511,6 +511,7 @@ function App() {
   const [status, setStatus] = useState('Ready');
 
   const [history, setHistory] = useState({ items: [], index: -1 });
+  const [selectedTool, setSelectedTool] = useState('select');
   const [shapes, setShapes] = useState([]);
   const [hoverShapeId, setHoverShapeId] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -684,6 +685,11 @@ function App() {
     const layer = canvasContainerRef.current;
     if (!layer || !point) return;
 
+    if (selectedTool === 'draw' && !dragRef.current && !resizeRef.current && !rotateRef.current) {
+      layer.style.cursor = 'crosshair';
+      return;
+    }
+
     if (resizeRef.current) {
       layer.style.cursor = getResizeCursor(resizeRef.current.handle);
       return;
@@ -719,7 +725,7 @@ function App() {
     }
 
     layer.style.cursor = hitShape ? 'move' : 'text';
-  }, []);
+  }, [selectedTool]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -893,6 +899,18 @@ function App() {
     const point = getMousePoint(e);
     if (!point) return;
 
+    if (selectedTool === 'draw') {
+      dragRef.current = null;
+      resizeRef.current = null;
+      rotateRef.current = null;
+      setHoverShapeId(null);
+      setCurrentPath([point]);
+      setIsDrawing(true);
+      const layer = canvasContainerRef.current;
+      if (layer) layer.style.cursor = 'crosshair';
+      return;
+    }
+
     const viewportPoint = {
       x: point.x - scrollOffsetRef.current.left,
       y: point.y - scrollOffsetRef.current.top
@@ -945,7 +963,7 @@ function App() {
     setHoverShapeId(null);
 
     passPointerThroughToEditor(e);
-  }, [getMousePoint, passPointerThroughToEditor, updateCursor]);
+  }, [getMousePoint, passPointerThroughToEditor, selectedTool, updateCursor]);
 
   const handleCanvasMouseMove = useCallback((e) => {
     const point = getMousePoint(e);
@@ -1069,6 +1087,26 @@ function App() {
     if (layer) layer.style.cursor = 'text';
   }, [captureSnapshot, currentPath, fillColor, isDrawing, pushHistory, strokeColor, strokeWidth, updateStatus]);
 
+  const handleCanvasContextMenu = useCallback((e) => {
+    e.preventDefault();
+
+    const point = getMousePoint(e);
+    if (!point) return;
+
+    const hitShape = [...shapesRef.current].reverse().find((shape) =>
+      isPointInShape(point, shape, scrollOffsetRef.current)
+    );
+
+    if (!hitShape) return;
+
+    const nextShapes = shapesRef.current.filter((shape) => shape.id !== hitShape.id);
+    shapesRef.current = nextShapes;
+    setShapes(nextShapes);
+    setHoverShapeId(null);
+    updateStatus(`${hitShape.type} deleted`);
+    pushHistory(captureSnapshot());
+  }, [captureSnapshot, getMousePoint, pushHistory, updateStatus]);
+
   const handleUndo = useCallback(() => {
     setHistory((prev) => {
       if (prev.index <= 0) return prev;
@@ -1144,7 +1182,8 @@ function App() {
     e.dataTransfer.setData('application/x-codeipad-tool', toolType);
   }, []);
 
-  const handleToolSelect = useCallback(() => {
+  const handleToolSelect = useCallback((toolType) => {
+    setSelectedTool(toolType);
     setMobileToolsOpen(false);
   }, []);
 
@@ -1161,8 +1200,8 @@ function App() {
           title={tool.label}
           draggable
           onDragStart={(e) => handleToolDragStart(e, tool.type)}
-          onClick={handleToolSelect}
-          className={`tool-btn ${tool.type === TOOL_ITEMS[0].type ? 'active' : ''}`}
+          onClick={() => handleToolSelect(tool.type)}
+          className={`tool-btn ${tool.type === selectedTool ? 'active' : ''}`}
         >
           {tool.icon}
         </button>
@@ -1318,6 +1357,7 @@ function App() {
           ref={canvasContainerRef}
           onDrop={handleDropOnCanvas}
           onDragOver={(e) => e.preventDefault()}
+          onContextMenu={handleCanvasContextMenu}
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
