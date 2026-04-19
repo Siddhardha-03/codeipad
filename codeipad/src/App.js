@@ -24,8 +24,7 @@ const TOOL_ITEMS = [
   { type: 'array', label: 'Array', icon: '[]' },
   { type: 'sll', label: 'Singly Linked List', icon: 'SLL' },
   { type: 'dll', label: 'Doubly Linked List', icon: 'DLL' },
-  { type: 'tree', label: 'Tree', icon: '🌳' },
-  { type: 'graph', label: 'Graph', icon: 'G' }
+  { type: 'tree', label: 'Tree', icon: '🌳' }
 ];
 
 const LANGUAGES = [
@@ -41,9 +40,9 @@ const LANGUAGES = [
 ];
 
 const SIZE_PRESETS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
-const FONT_SIZE_PRESETS = [12, 14, 15, 16, 18, 20, 22, 24];
+const FONT_SIZE_PRESETS = [12, 14, 15, 16, 18, 20, 22, 24, 28, 32, 36, 48, 60, 72];
 const BLOCK_SIZE_PRESETS = [40, 50, 60, 70, 80, 100];
-const ELEMENT_COUNT_PRESETS = [3, 4, 5, 6, 7, 8];
+const ELEMENT_COUNT_PRESETS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 function hexToRgba(hex, alpha = 0.12) {
   const normalized = hex.replace('#', '');
@@ -122,7 +121,7 @@ function getShapeBounds(shape, scrollOffset) {
     return { left: x - shape.width / 2, top: y - shape.height / 2, width: shape.width, height: shape.height };
   }
 
-  if (shape.type === 'tree' || shape.type === 'graph') {
+  if (shape.type === 'tree') {
     return { left: x - shape.width / 2, top: y - shape.height / 2, width: shape.width, height: shape.height };
   }
 
@@ -226,30 +225,39 @@ function drawPen(ctx, points, scrollOffset) {
 }
 
 function drawArrayLike(ctx, shape, x, y, withNextArrow, withPrevArrow) {
-  const block = shape.blockSize;
+  const cellWidth = shape.cellWidth || shape.blockSize;
+  const cellHeight = shape.cellHeight || shape.blockSize;
   const gap = withNextArrow ? 18 : 2;
   const count = shape.count;
   const startX = x - shape.width / 2;
   const top = y - shape.height / 2;
+  const cellsPerNode = withPrevArrow ? 3 : withNextArrow ? 2 : 1;
+  const nodeWidth = cellWidth * cellsPerNode;
 
   ctx.fillStyle = hexToRgba(shape.fillColor, 0.08);
   ctx.strokeStyle = shape.strokeColor;
   ctx.lineWidth = shape.strokeWidth;
 
   for (let i = 0; i < count; i += 1) {
-    const cellLeft = startX + i * (block + gap);
-    ctx.strokeRect(cellLeft, top, block, block);
-    ctx.fillRect(cellLeft, top, block, block);
-    ctx.fillStyle = shape.strokeColor;
-    ctx.font = '13px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(String(i), cellLeft + block / 2, top + block / 2 + 4);
-    ctx.fillStyle = hexToRgba(shape.fillColor, 0.08);
+    const cellLeft = startX + i * (nodeWidth + gap);
+    ctx.strokeRect(cellLeft, top, nodeWidth, cellHeight);
+    ctx.fillRect(cellLeft, top, nodeWidth, cellHeight);
+
+    if (cellsPerNode > 1) {
+      const segment = nodeWidth / cellsPerNode;
+      for (let segmentIndex = 1; segmentIndex < cellsPerNode; segmentIndex += 1) {
+        const dividerX = cellLeft + segment * segmentIndex;
+        ctx.beginPath();
+        ctx.moveTo(dividerX, top);
+        ctx.lineTo(dividerX, top + cellHeight);
+        ctx.stroke();
+      }
+    }
 
     if (i < count - 1 && withNextArrow) {
-      const midY = top + block / 2;
-      const fromX = cellLeft + block;
-      const toX = cellLeft + block + gap;
+      const midY = top + cellHeight / 2;
+      const fromX = cellLeft + nodeWidth;
+      const toX = cellLeft + nodeWidth + gap;
 
       ctx.beginPath();
       ctx.moveTo(fromX + 2, midY);
@@ -309,47 +317,6 @@ function drawTree(ctx, shape, x, y) {
     ctx.arc(node.x, node.y, nodeRadius, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
-    ctx.fillStyle = shape.strokeColor;
-    ctx.textAlign = 'center';
-    ctx.font = '13px monospace';
-    ctx.fillText(index === 0 ? 'R' : index === 1 ? 'L' : 'R', node.x, node.y + 4);
-    ctx.fillStyle = hexToRgba(shape.fillColor, 0.12);
-  });
-}
-
-function drawGraph(ctx, shape, x, y) {
-  const radius = Math.min(shape.width, shape.height) * 0.34;
-  const nodeRadius = Math.max(10, shape.blockSize * 0.18);
-
-  const nodes = [
-    { x, y: y - radius },
-    { x: x + radius, y },
-    { x, y: y + radius },
-    { x: x - radius, y }
-  ];
-
-  ctx.strokeStyle = shape.strokeColor;
-  ctx.fillStyle = hexToRgba(shape.fillColor, 0.12);
-  ctx.lineWidth = shape.strokeWidth;
-
-  const edges = [[0, 1], [1, 2], [2, 3], [3, 0], [0, 2]];
-  edges.forEach(([a, b]) => {
-    ctx.beginPath();
-    ctx.moveTo(nodes[a].x, nodes[a].y);
-    ctx.lineTo(nodes[b].x, nodes[b].y);
-    ctx.stroke();
-  });
-
-  nodes.forEach((node, index) => {
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, nodeRadius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    ctx.fillStyle = shape.strokeColor;
-    ctx.textAlign = 'center';
-    ctx.font = '12px monospace';
-    ctx.fillText(String(index), node.x, node.y + 4);
-    ctx.fillStyle = hexToRgba(shape.fillColor, 0.12);
   });
 }
 
@@ -429,11 +396,6 @@ function drawShape(ctx, shape, scrollOffset) {
 
   if (shape.type === 'tree') {
     drawTree(ctx, shape, x, y);
-    return;
-  }
-
-  if (shape.type === 'graph') {
-    drawGraph(ctx, shape, x, y);
   }
 }
 
@@ -649,20 +611,18 @@ function App() {
       shape.text = 'Text';
     } else if (toolType === 'array' || toolType === 'sll' || toolType === 'dll') {
       const gap = toolType === 'array' ? 2 : 18;
+      const cellsPerNode = toolType === 'dll' ? 3 : toolType === 'sll' ? 2 : 1;
       shape.count = elementCount;
       shape.blockSize = blockSize;
-      shape.width = elementCount * blockSize + (elementCount - 1) * gap;
-      shape.height = blockSize;
+      shape.cellWidth = blockSize;
+      shape.cellHeight = blockSize;
+      shape.width = elementCount * (shape.cellWidth * cellsPerNode) + (elementCount - 1) * gap;
+      shape.height = shape.cellHeight;
     } else if (toolType === 'tree') {
       shape.count = Math.max(3, elementCount);
       shape.blockSize = blockSize;
       shape.width = blockSize * 3.2;
       shape.height = blockSize * 2.2;
-    } else if (toolType === 'graph') {
-      shape.count = Math.max(4, elementCount);
-      shape.blockSize = blockSize;
-      shape.width = blockSize * 3;
-      shape.height = blockSize * 3;
     }
 
     const nextShapes = [...shapesRef.current, shape];
@@ -891,6 +851,18 @@ function App() {
         updated.width = clamp(next.width, 40, 2000);
       } else if (shape.type === 'text') {
         updated.width = clamp(next.width, 120, 2000);
+      } else if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll') {
+        const gap = shape.type === 'array' ? 2 : 18;
+        const cellsPerNode = shape.type === 'dll' ? 3 : shape.type === 'sll' ? 2 : 1;
+        const availableWidth = clamp(next.width - (shape.count - 1) * gap, 30, 3000);
+        const perNodeWidth = availableWidth / shape.count;
+        const nextCellWidth = clamp(Math.floor(perNodeWidth / cellsPerNode), 16, 260);
+        const nextCellHeight = clamp(Math.floor(next.height), 20, 320);
+        updated.cellWidth = nextCellWidth;
+        updated.cellHeight = nextCellHeight;
+        updated.blockSize = nextCellWidth;
+        updated.width = shape.count * (nextCellWidth * cellsPerNode) + (shape.count - 1) * gap;
+        updated.height = nextCellHeight;
       } else if (shape.type !== 'pen') {
         updated.width = next.width;
         updated.height = next.height;
@@ -1096,6 +1068,9 @@ function App() {
     fontLigatures: true,
     roundedSelection: true,
     lineNumbers: 'on',
+    lineNumbersMinChars: 2,
+    glyphMargin: false,
+    lineDecorationsWidth: 2,
     renderLineHighlight: 'all',
     tabSize: 2,
     padding: { top: 16, bottom: 16 },
@@ -1170,7 +1145,7 @@ function App() {
           <button
             type="button"
             className="toolbar-icon-btn"
-            onClick={() => setEditorFontSize((prev) => clamp(prev - 1, 10, 36))}
+            onClick={() => setEditorFontSize((prev) => clamp(prev - 1, 10, 72))}
             title="Decrease Font"
           >
             A-
@@ -1188,7 +1163,7 @@ function App() {
           <button
             type="button"
             className="toolbar-icon-btn"
-            onClick={() => setEditorFontSize((prev) => clamp(prev + 1, 10, 36))}
+            onClick={() => setEditorFontSize((prev) => clamp(prev + 1, 10, 72))}
             title="Increase Font"
           >
             A+
