@@ -10,6 +10,7 @@ console.log(sum(2, 3));`;
 
 const MAX_HISTORY = 40;
 const HANDLE_SIZE = 8;
+const ROTATABLE_TYPES = new Set(['line', 'arrow', 'double-arrow', 'curved-arrow']);
 
 const TOOL_ITEMS = [
   { type: 'select', label: 'Select / Move', icon: '⌖' },
@@ -145,7 +146,22 @@ function getHandlePositions(bounds) {
   };
 }
 
-function getHandleAtPoint(point, bounds) {
+function getRotateHandlePosition(bounds) {
+  return {
+    x: bounds.left + bounds.width / 2,
+    y: bounds.top + HANDLE_SIZE + 4
+  };
+}
+
+function getHandleAtPoint(point, bounds, shapeType) {
+  if (ROTATABLE_TYPES.has(shapeType)) {
+    const rotateHandle = getRotateHandlePosition(bounds);
+    const rotateThreshold = HANDLE_SIZE + 4;
+    if (Math.abs(point.x - rotateHandle.x) <= rotateThreshold && Math.abs(point.y - rotateHandle.y) <= rotateThreshold) {
+      return 'rotate';
+    }
+  }
+
   const handles = getHandlePositions(bounds);
   const threshold = HANDLE_SIZE + 2;
   const keys = Object.keys(handles);
@@ -159,6 +175,13 @@ function getHandleAtPoint(point, bounds) {
   }
 
   return null;
+}
+
+function getResizeCursor(handle) {
+  if (handle === 'rotate') return 'grab';
+  if (handle === 'nw' || handle === 'se') return 'nwse-resize';
+  if (handle === 'ne' || handle === 'sw') return 'nesw-resize';
+  return 'move';
 }
 
 function isPointInShape(point, shape, scrollOffset) {
@@ -327,6 +350,7 @@ function drawTree(ctx, shape, x, y) {
 function drawShape(ctx, shape, scrollOffset) {
   const x = shape.x - scrollOffset.left;
   const y = shape.y - scrollOffset.top;
+  const angle = shape.angle || 0;
 
   ctx.strokeStyle = shape.strokeColor;
   ctx.fillStyle = hexToRgba(shape.fillColor, 0.14);
@@ -353,20 +377,32 @@ function drawShape(ctx, shape, scrollOffset) {
 
   if (shape.type === 'line') {
     const w = shape.width || 160;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
     ctx.beginPath();
-    ctx.moveTo(x - w / 2, y);
-    ctx.lineTo(x + w / 2, y);
+    ctx.moveTo(-w / 2, 0);
+    ctx.lineTo(w / 2, 0);
     ctx.stroke();
+    ctx.restore();
     return;
   }
 
   if (shape.type === 'arrow' || shape.type === 'double-arrow') {
-    drawArrow(ctx, x, y, shape);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    drawArrow(ctx, 0, 0, shape);
+    ctx.restore();
     return;
   }
 
   if (shape.type === 'curved-arrow') {
-    drawCurvedArrow(ctx, x, y, shape);
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    drawCurvedArrow(ctx, 0, 0, shape);
+    ctx.restore();
     return;
   }
 
@@ -422,6 +458,14 @@ function drawResizeHandles(ctx, shape, scrollOffset) {
     ctx.strokeRect(handle.x - HANDLE_SIZE / 2, handle.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
   });
 
+  if (ROTATABLE_TYPES.has(shape.type)) {
+    const rotateHandle = getRotateHandlePosition(bounds);
+    ctx.beginPath();
+    ctx.arc(rotateHandle.x, rotateHandle.y, HANDLE_SIZE / 2 + 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
   ctx.restore();
 }
 
@@ -458,7 +502,6 @@ function App() {
   const [editorReady, setEditorReady] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
 
-  const [selectedTool, setSelectedTool] = useState('select');
   const [strokeColor, setStrokeColor] = useState('#2563eb');
   const [fillColor, setFillColor] = useState('#2563eb');
   const [strokeWidth, setStrokeWidth] = useState(3);
@@ -469,7 +512,7 @@ function App() {
 
   const [history, setHistory] = useState({ items: [], index: -1 });
   const [shapes, setShapes] = useState([]);
-  const [activeShapeId, setActiveShapeId] = useState(null);
+  const [hoverShapeId, setHoverShapeId] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState([]);
   const [viewportTick, setViewportTick] = useState(0);
@@ -486,6 +529,7 @@ function App() {
   const shapesRef = useRef([]);
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
+  const rotateRef = useRef(null);
 
   const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
 
@@ -580,7 +624,6 @@ function App() {
     const nextShapes = snapshot.shapes ?? [];
     shapesRef.current = nextShapes;
     setShapes(nextShapes);
-    setActiveShapeId(null);
 
     window.setTimeout(() => {
       historyLockRef.current = false;
@@ -633,7 +676,6 @@ function App() {
     const nextShapes = [...shapesRef.current, shape];
     shapesRef.current = nextShapes;
     setShapes(nextShapes);
-    setActiveShapeId(id);
     updateStatus(`${toolType} added`);
     return shape;
   }, [blockSize, elementCount, fillColor, strokeColor, strokeWidth, updateStatus]);
@@ -642,34 +684,42 @@ function App() {
     const layer = canvasContainerRef.current;
     if (!layer || !point) return;
 
+    if (resizeRef.current) {
+      layer.style.cursor = getResizeCursor(resizeRef.current.handle);
+      return;
+    }
+
+    if (rotateRef.current) {
+      layer.style.cursor = 'grabbing';
+      return;
+    }
+
     if (dragRef.current) {
       layer.style.cursor = 'grabbing';
       return;
     }
 
-    if (resizeRef.current) {
-      layer.style.cursor = 'nwse-resize';
-      return;
-    }
+    const viewportPoint = {
+      x: point.x - scrollOffsetRef.current.left,
+      y: point.y - scrollOffsetRef.current.top
+    };
 
-    const activeShape = shapesRef.current.find((shape) => shape.id === activeShapeId);
-    if (activeShape && activeShape.type !== 'pen') {
-      const bounds = getShapeBounds(activeShape, scrollOffsetRef.current);
-      const handle = getHandleAtPoint({
-        x: point.x - scrollOffsetRef.current.left,
-        y: point.y - scrollOffsetRef.current.top
-      }, bounds);
+    const hitShape = [...shapesRef.current].reverse().find((shape) => {
+      if (!isPointInShape(point, shape, scrollOffsetRef.current)) return false;
+      return true;
+    });
+
+    if (hitShape && hitShape.type !== 'pen' && hitShape.type !== 'text') {
+      const bounds = getShapeBounds(hitShape, scrollOffsetRef.current);
+      const handle = getHandleAtPoint(viewportPoint, bounds, hitShape.type);
       if (handle) {
-        layer.style.cursor = 'nwse-resize';
+        layer.style.cursor = getResizeCursor(handle);
         return;
       }
     }
 
-    const hitShape = [...shapesRef.current].reverse().find((shape) =>
-      isPointInShape(point, shape, scrollOffsetRef.current)
-    );
     layer.style.cursor = hitShape ? 'move' : 'text';
-  }, [activeShapeId]);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -682,10 +732,15 @@ function App() {
 
     shapes.forEach((shape) => {
       drawShape(ctx, shape, scrollOffsetRef.current);
-      if (shape.id === activeShapeId) {
-        drawResizeHandles(ctx, shape, scrollOffsetRef.current);
-      }
     });
+
+    const focusedShapeId = rotateRef.current?.shapeId || resizeRef.current?.shapeId || dragRef.current?.shapeId || hoverShapeId;
+    if (focusedShapeId) {
+      const focusedShape = shapes.find((shape) => shape.id === focusedShapeId);
+      if (focusedShape) {
+        drawResizeHandles(ctx, focusedShape, scrollOffsetRef.current);
+      }
+    }
 
     if (isDrawing && currentPath.length > 1) {
       ctx.save();
@@ -696,7 +751,89 @@ function App() {
       drawPen(ctx, currentPath, scrollOffsetRef.current);
       ctx.restore();
     }
-  }, [activeShapeId, currentPath, isDrawing, shapes, strokeColor, strokeWidth, viewportTick]);
+  }, [currentPath, hoverShapeId, isDrawing, shapes, strokeColor, strokeWidth, viewportTick]);
+
+  const applyResize = useCallback((shape, bounds, handle, point) => {
+    const startLeft = bounds.left;
+    const startTop = bounds.top;
+    const startRight = bounds.left + bounds.width;
+    const startBottom = bounds.top + bounds.height;
+    const minSize = 20;
+
+    let left = startLeft;
+    let right = startRight;
+    let top = startTop;
+    let bottom = startBottom;
+
+    if (handle.includes('w')) left = Math.min(point.x, startRight - minSize);
+    if (handle.includes('e')) right = Math.max(point.x, startLeft + minSize);
+    if (handle.includes('n')) top = Math.min(point.y, startBottom - minSize);
+    if (handle.includes('s')) bottom = Math.max(point.y, startTop + minSize);
+
+    const width = Math.max(minSize, right - left);
+    const height = Math.max(minSize, bottom - top);
+    const centerX = left + width / 2;
+    const centerY = top + height / 2;
+
+    const common = {
+      ...shape,
+      x: centerX + scrollOffsetRef.current.left,
+      y: centerY + scrollOffsetRef.current.top
+    };
+
+    if (shape.type === 'circle') {
+      return {
+        ...common,
+        radius: Math.max(12, Math.min(width, height) / 2)
+      };
+    }
+
+    if (shape.type === 'line' || shape.type === 'arrow' || shape.type === 'double-arrow' || shape.type === 'curved-arrow') {
+      return {
+        ...common,
+        width: Math.max(24, width)
+      };
+    }
+
+    if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll') {
+      const count = Math.max(1, shape.count || 1);
+      const cellsPerNode = shape.type === 'dll' ? 3 : shape.type === 'sll' ? 2 : 1;
+      const gap = shape.type === 'array' ? 2 : 18;
+      const usableWidth = Math.max(24, width - (count - 1) * gap);
+      const nodeWidth = usableWidth / count;
+      const cellWidth = Math.max(16, nodeWidth / cellsPerNode);
+      const cellHeight = Math.max(16, height);
+      const finalWidth = count * (cellWidth * cellsPerNode) + (count - 1) * gap;
+
+      return {
+        ...common,
+        cellWidth,
+        cellHeight,
+        width: finalWidth,
+        height: cellHeight,
+        blockSize: Math.max(16, Math.round(Math.min(cellWidth, cellHeight)))
+      };
+    }
+
+    if (shape.type === 'tree') {
+      return {
+        ...common,
+        width: Math.max(40, width),
+        height: Math.max(40, height),
+        blockSize: Math.max(24, Math.round(Math.min(width, height) * 0.35))
+      };
+    }
+
+    if (shape.type === 'text' || shape.type === 'pen') {
+      return shape;
+    }
+
+    return {
+      ...common,
+      width: Math.max(24, width),
+      height: Math.max(24, height)
+    };
+  }, []);
 
   useEffect(() => {
     const canvasNode = canvasRef.current;
@@ -756,33 +893,43 @@ function App() {
     const point = getMousePoint(e);
     if (!point) return;
 
-    const selectedShape = [...shapesRef.current].reverse().find((shape) =>
+    const viewportPoint = {
+      x: point.x - scrollOffsetRef.current.left,
+      y: point.y - scrollOffsetRef.current.top
+    };
+
+    const orderedShapes = [...shapesRef.current].reverse();
+
+    for (let i = 0; i < orderedShapes.length; i += 1) {
+      const shape = orderedShapes[i];
+      if (shape.type === 'pen' || shape.type === 'text') continue;
+
+      const bounds = getShapeBounds(shape, scrollOffsetRef.current);
+      const handle = getHandleAtPoint(viewportPoint, bounds, shape.type);
+
+      if (handle) {
+        if (handle === 'rotate') {
+          rotateRef.current = {
+            shapeId: shape.id
+          };
+        } else {
+          resizeRef.current = {
+            shapeId: shape.id,
+            handle,
+            bounds
+          };
+        }
+        setHoverShapeId(shape.id);
+        updateCursor(point);
+        return;
+      }
+    }
+
+    const selectedShape = orderedShapes.find((shape) =>
       isPointInShape(point, shape, scrollOffsetRef.current)
     );
 
     if (selectedShape) {
-      const shapeBounds = getShapeBounds(selectedShape, scrollOffsetRef.current);
-      const handle = selectedShape.id === activeShapeId
-        ? getHandleAtPoint({
-          x: point.x - scrollOffsetRef.current.left,
-          y: point.y - scrollOffsetRef.current.top
-        }, shapeBounds)
-        : null;
-
-      setActiveShapeId(selectedShape.id);
-
-      if (handle && selectedShape.type !== 'pen') {
-        resizeRef.current = {
-          shapeId: selectedShape.id,
-          handle,
-          startX: point.x,
-          startY: point.y,
-          shape: JSON.parse(JSON.stringify(selectedShape))
-        };
-        updateCursor(point);
-        return;
-      }
-
       dragRef.current = {
         shapeId: selectedShape.id,
         startX: point.x,
@@ -790,95 +937,15 @@ function App() {
         shapeX: selectedShape.x,
         shapeY: selectedShape.y
       };
+      setHoverShapeId(selectedShape.id);
       updateCursor(point);
       return;
     }
 
-    if (selectedTool === 'draw') {
-      setIsDrawing(true);
-      setCurrentPath([point]);
-      updateStatus('Drawing...');
-      return;
-    }
+    setHoverShapeId(null);
 
-    if (selectedTool !== 'select') {
-      createShape(selectedTool, point);
-      pushHistory(captureSnapshot());
-      return;
-    }
-
-    setActiveShapeId(null);
     passPointerThroughToEditor(e);
-  }, [activeShapeId, captureSnapshot, createShape, getMousePoint, passPointerThroughToEditor, pushHistory, selectedTool, updateCursor, updateStatus]);
-
-  const applyResize = useCallback((currentPoint) => {
-    const resizeState = resizeRef.current;
-    if (!resizeState) return;
-
-    const dx = currentPoint.x - resizeState.startX;
-    const dy = currentPoint.y - resizeState.startY;
-
-    const original = resizeState.shape;
-
-    const resizeByBounds = (bounds) => {
-      let left = bounds.left;
-      let top = bounds.top;
-      let right = bounds.left + bounds.width;
-      let bottom = bounds.top + bounds.height;
-
-      if (resizeState.handle.includes('n')) top += dy;
-      if (resizeState.handle.includes('s')) bottom += dy;
-      if (resizeState.handle.includes('w')) left += dx;
-      if (resizeState.handle.includes('e')) right += dx;
-
-      const nextWidth = clamp(right - left, 20, 2000);
-      const nextHeight = clamp(bottom - top, 20, 2000);
-
-      return {
-        cx: left + nextWidth / 2,
-        cy: top + nextHeight / 2,
-        width: nextWidth,
-        height: nextHeight
-      };
-    };
-
-    const currentBounds = getShapeBounds(original, { left: 0, top: 0 });
-    const next = resizeByBounds(currentBounds);
-
-    const nextShapes = shapesRef.current.map((shape) => {
-      if (shape.id !== resizeState.shapeId) return shape;
-
-      const updated = { ...shape, x: next.cx, y: next.cy };
-
-      if (shape.type === 'circle') {
-        updated.radius = clamp(Math.max(next.width, next.height) / 2, 10, 1000);
-      } else if (shape.type === 'line' || shape.type === 'arrow' || shape.type === 'double-arrow' || shape.type === 'curved-arrow') {
-        updated.width = clamp(next.width, 40, 2000);
-      } else if (shape.type === 'text') {
-        updated.width = clamp(next.width, 120, 2000);
-      } else if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll') {
-        const gap = shape.type === 'array' ? 2 : 18;
-        const cellsPerNode = shape.type === 'dll' ? 3 : shape.type === 'sll' ? 2 : 1;
-        const availableWidth = clamp(next.width - (shape.count - 1) * gap, 30, 3000);
-        const perNodeWidth = availableWidth / shape.count;
-        const nextCellWidth = clamp(Math.floor(perNodeWidth / cellsPerNode), 16, 260);
-        const nextCellHeight = clamp(Math.floor(next.height), 20, 320);
-        updated.cellWidth = nextCellWidth;
-        updated.cellHeight = nextCellHeight;
-        updated.blockSize = nextCellWidth;
-        updated.width = shape.count * (nextCellWidth * cellsPerNode) + (shape.count - 1) * gap;
-        updated.height = nextCellHeight;
-      } else if (shape.type !== 'pen') {
-        updated.width = next.width;
-        updated.height = next.height;
-      }
-
-      return updated;
-    });
-
-    shapesRef.current = nextShapes;
-    setShapes(nextShapes);
-  }, []);
+  }, [getMousePoint, passPointerThroughToEditor, updateCursor]);
 
   const handleCanvasMouseMove = useCallback((e) => {
     const point = getMousePoint(e);
@@ -890,7 +957,38 @@ function App() {
     }
 
     if (resizeRef.current) {
-      applyResize(point);
+      const viewportPoint = {
+        x: point.x - scrollOffsetRef.current.left,
+        y: point.y - scrollOffsetRef.current.top
+      };
+
+      const { shapeId, handle, bounds } = resizeRef.current;
+      const nextShapes = shapesRef.current.map((shape) => {
+        if (shape.id !== shapeId) return shape;
+        return applyResize(shape, bounds, handle, viewportPoint);
+      });
+
+      shapesRef.current = nextShapes;
+      setShapes(nextShapes);
+      setHoverShapeId(shapeId);
+      updateCursor(point);
+      return;
+    }
+
+    if (rotateRef.current) {
+      const { shapeId } = rotateRef.current;
+      const nextShapes = shapesRef.current.map((shape) => {
+        if (shape.id !== shapeId) return shape;
+        const angle = Math.atan2(point.y - shape.y, point.x - shape.x);
+        return {
+          ...shape,
+          angle
+        };
+      });
+
+      shapesRef.current = nextShapes;
+      setShapes(nextShapes);
+      setHoverShapeId(shapeId);
       updateCursor(point);
       return;
     }
@@ -910,9 +1008,15 @@ function App() {
 
       shapesRef.current = nextShapes;
       setShapes(nextShapes);
+      setHoverShapeId(dragRef.current.shapeId);
       updateCursor(point);
       return;
     }
+
+    const hovered = [...shapesRef.current].reverse().find((shape) =>
+      isPointInShape(point, shape, scrollOffsetRef.current)
+    );
+    setHoverShapeId(hovered?.id ?? null);
 
     updateCursor(point);
   }, [applyResize, getMousePoint, isDrawing, updateCursor]);
@@ -934,7 +1038,6 @@ function App() {
         const nextShapes = [...shapesRef.current, penShape];
         shapesRef.current = nextShapes;
         setShapes(nextShapes);
-        setActiveShapeId(penShape.id);
         pushHistory(captureSnapshot());
         updateStatus('Freehand added');
       }
@@ -943,13 +1046,22 @@ function App() {
       setCurrentPath([]);
     }
 
-    if (resizeRef.current) {
-      resizeRef.current = null;
+    if (dragRef.current) {
+      dragRef.current = null;
       pushHistory(captureSnapshot());
     }
 
-    if (dragRef.current) {
-      dragRef.current = null;
+    if (resizeRef.current) {
+      const shapeId = resizeRef.current.shapeId;
+      resizeRef.current = null;
+      setHoverShapeId(shapeId);
+      pushHistory(captureSnapshot());
+    }
+
+    if (rotateRef.current) {
+      const shapeId = rotateRef.current.shapeId;
+      rotateRef.current = null;
+      setHoverShapeId(shapeId);
       pushHistory(captureSnapshot());
     }
 
@@ -977,19 +1089,6 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if ((e.key === 'Delete' || e.key === 'Backspace') && activeShapeId) {
-        const tag = e.target?.tagName?.toLowerCase();
-        if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
-
-        const nextShapes = shapesRef.current.filter((shape) => shape.id !== activeShapeId);
-        shapesRef.current = nextShapes;
-        setShapes(nextShapes);
-        setActiveShapeId(null);
-        pushHistory(captureSnapshot());
-        updateStatus('Deleted selected shape');
-        e.preventDefault();
-      }
-
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         handleUndo();
         e.preventDefault();
@@ -1003,7 +1102,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeShapeId, captureSnapshot, handleRedo, handleUndo, pushHistory, updateStatus]);
+  }, [handleRedo, handleUndo]);
 
   useEffect(() => {
     latestStateRef.current = { language, theme };
@@ -1023,7 +1122,7 @@ function App() {
   const clearCanvas = useCallback(() => {
     shapesRef.current = [];
     setShapes([]);
-    setActiveShapeId(null);
+    setHoverShapeId(null);
     setIsDrawing(false);
     setCurrentPath([]);
     pushHistory(captureSnapshot());
@@ -1043,11 +1142,9 @@ function App() {
 
   const handleToolDragStart = useCallback((e, toolType) => {
     e.dataTransfer.setData('application/x-codeipad-tool', toolType);
-    setSelectedTool(toolType);
   }, []);
 
-  const handleToolSelect = useCallback((toolType) => {
-    setSelectedTool(toolType);
+  const handleToolSelect = useCallback(() => {
     setMobileToolsOpen(false);
   }, []);
 
@@ -1064,8 +1161,8 @@ function App() {
           title={tool.label}
           draggable
           onDragStart={(e) => handleToolDragStart(e, tool.type)}
-          onClick={() => handleToolSelect(tool.type)}
-          className={`tool-btn ${selectedTool === tool.type ? 'active' : ''}`}
+          onClick={handleToolSelect}
+          className={`tool-btn ${tool.type === TOOL_ITEMS[0].type ? 'active' : ''}`}
         >
           {tool.icon}
         </button>
