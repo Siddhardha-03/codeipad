@@ -15,6 +15,7 @@ const ROTATABLE_TYPES = new Set(['line', 'arrow', 'double-arrow', 'curved-arrow'
 const TOOL_ITEMS = [
   { type: 'select', label: 'Select / Move', icon: '⌖' },
   { type: 'draw', label: 'Freehand Draw', icon: '✎' },
+  { type: 'erase', label: 'Erase Freehand', icon: '⌫' },
   { type: 'rectangle', label: 'Rectangle', icon: '▭' },
   { type: 'circle', label: 'Circle', icon: '◯' },
   { type: 'line', label: 'Straight Line', icon: '／' },
@@ -473,6 +474,77 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
+function distancePointToSegment(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+
+  if (lengthSquared === 0) {
+    return Math.hypot(point.x - start.x, point.y - start.y);
+  }
+
+  let t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared;
+  t = Math.max(0, Math.min(1, t));
+
+  const projectedX = start.x + t * dx;
+  const projectedY = start.y + t * dy;
+  return Math.hypot(point.x - projectedX, point.y - projectedY);
+}
+
+function erasePenShapeAtPoint(shape, point, eraserRadius) {
+  if (shape.type !== 'pen' || !Array.isArray(shape.points) || shape.points.length < 2) {
+    return {
+      changed: false,
+      shapes: [shape]
+    };
+  }
+
+  const radiusWithStroke = eraserRadius + (shape.strokeWidth || 2) / 2;
+  const points = shape.points;
+  const remainingSegments = [];
+  let currentSegment = [points[0]];
+  let changed = false;
+
+  for (let i = 1; i < points.length; i += 1) {
+    const prev = points[i - 1];
+    const curr = points[i];
+    const segmentIsErased = distancePointToSegment(point, prev, curr) <= radiusWithStroke;
+
+    if (segmentIsErased) {
+      changed = true;
+      if (currentSegment.length > 1) {
+        remainingSegments.push(currentSegment);
+      }
+      currentSegment = [curr];
+      continue;
+    }
+
+    currentSegment.push(curr);
+  }
+
+  if (currentSegment.length > 1) {
+    remainingSegments.push(currentSegment);
+  }
+
+  if (!changed) {
+    return {
+      changed: false,
+      shapes: [shape]
+    };
+  }
+
+  return {
+    changed: true,
+    shapes: remainingSegments.map((segment, index) => ({
+      ...shape,
+      id: `${shape.id}-erased-${index}-${Date.now()}`,
+      x: segment[0].x,
+      y: segment[0].y,
+      points: segment
+    }))
+  };
+}
+
 const MonacoPane = React.memo(function MonacoPane({
   language,
   theme,
@@ -505,6 +577,7 @@ function App() {
   const [strokeColor, setStrokeColor] = useState('#2563eb');
   const [fillColor, setFillColor] = useState('#2563eb');
   const [strokeWidth, setStrokeWidth] = useState(3);
+  const [eraseSize, setEraseSize] = useState(20);
   const [editorFontSize, setEditorFontSize] = useState(15);
   const [elementCount, setElementCount] = useState(5);
   const [blockSize, setBlockSize] = useState(60);
@@ -515,6 +588,8 @@ function App() {
   const [shapes, setShapes] = useState([]);
   const [hoverShapeId, setHoverShapeId] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isErasing, setIsErasing] = useState(false);
+  const [eraserPointer, setEraserPointer] = useState(null);
   const [currentPath, setCurrentPath] = useState([]);
   const [viewportTick, setViewportTick] = useState(0);
 
@@ -531,6 +606,7 @@ function App() {
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
   const rotateRef = useRef(null);
+  const erasedDuringStrokeRef = useRef(false);
 
   const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
 
@@ -685,6 +761,11 @@ function App() {
     const layer = canvasContainerRef.current;
     if (!layer || !point) return;
 
+    if (selectedTool === 'erase' && !dragRef.current && !resizeRef.current && !rotateRef.current) {
+      layer.style.cursor = 'crosshair';
+      return;
+    }
+
     if (selectedTool === 'draw' && !dragRef.current && !resizeRef.current && !rotateRef.current) {
       layer.style.cursor = 'crosshair';
       return;
@@ -727,6 +808,32 @@ function App() {
     layer.style.cursor = hitShape ? 'move' : 'text';
   }, [selectedTool]);
 
+  const eraseAtPoint = useCallback((point) => {
+    const radius = Math.max(4, eraseSize / 2);
+    const nextShapes = [];
+    let changed = false;
+
+    shapesRef.current.forEach((shape) => {
+      if (shape.type !== 'pen') {
+        nextShapes.push(shape);
+        return;
+      }
+
+      const result = erasePenShapeAtPoint(shape, point, radius);
+      if (result.changed) {
+        changed = true;
+      }
+      nextShapes.push(...result.shapes);
+    });
+
+    if (changed) {
+      erasedDuringStrokeRef.current = true;
+      shapesRef.current = nextShapes;
+      setShapes(nextShapes);
+      setHoverShapeId(null);
+    }
+  }, [eraseSize]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -757,7 +864,25 @@ function App() {
       drawPen(ctx, currentPath, scrollOffsetRef.current);
       ctx.restore();
     }
-  }, [currentPath, hoverShapeId, isDrawing, shapes, strokeColor, strokeWidth, viewportTick]);
+
+    if (selectedTool === 'erase' && eraserPointer) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(220, 38, 38, 0.9)';
+      ctx.fillStyle = 'rgba(220, 38, 38, 0.12)';
+      ctx.lineWidth = 1.25;
+      ctx.beginPath();
+      ctx.arc(
+        eraserPointer.x - scrollOffsetRef.current.left,
+        eraserPointer.y - scrollOffsetRef.current.top,
+        Math.max(4, eraseSize / 2),
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+      ctx.stroke();
+      ctx.restore();
+    }
+  }, [currentPath, eraseSize, eraserPointer, hoverShapeId, isDrawing, selectedTool, shapes, strokeColor, strokeWidth, viewportTick]);
 
   const applyResize = useCallback((shape, bounds, handle, point) => {
     const startLeft = bounds.left;
@@ -899,6 +1024,18 @@ function App() {
     const point = getMousePoint(e);
     if (!point) return;
 
+    if (selectedTool === 'erase') {
+      dragRef.current = null;
+      resizeRef.current = null;
+      rotateRef.current = null;
+      setHoverShapeId(null);
+      setEraserPointer(point);
+      erasedDuringStrokeRef.current = false;
+      setIsErasing(true);
+      eraseAtPoint(point);
+      return;
+    }
+
     if (selectedTool === 'draw') {
       dragRef.current = null;
       resizeRef.current = null;
@@ -963,7 +1100,7 @@ function App() {
     setHoverShapeId(null);
 
     passPointerThroughToEditor(e);
-  }, [getMousePoint, passPointerThroughToEditor, selectedTool, updateCursor]);
+  }, [eraseAtPoint, getMousePoint, passPointerThroughToEditor, selectedTool, updateCursor]);
 
   const handleCanvasMouseMove = useCallback((e) => {
     const point = getMousePoint(e);
@@ -971,6 +1108,14 @@ function App() {
 
     if (isDrawing) {
       setCurrentPath((prev) => [...prev, point]);
+      return;
+    }
+
+    if (selectedTool === 'erase') {
+      setEraserPointer(point);
+      if (isErasing) {
+        eraseAtPoint(point);
+      }
       return;
     }
 
@@ -1037,9 +1182,18 @@ function App() {
     setHoverShapeId(hovered?.id ?? null);
 
     updateCursor(point);
-  }, [applyResize, getMousePoint, isDrawing, updateCursor]);
+  }, [applyResize, eraseAtPoint, getMousePoint, isDrawing, isErasing, selectedTool, updateCursor]);
 
   const handleCanvasMouseUp = useCallback(() => {
+    if (isErasing) {
+      setIsErasing(false);
+      if (erasedDuringStrokeRef.current) {
+        pushHistory(captureSnapshot());
+        updateStatus('Erased');
+      }
+      erasedDuringStrokeRef.current = false;
+    }
+
     if (isDrawing) {
       if (currentPath.length > 1) {
         const penShape = {
@@ -1084,8 +1238,14 @@ function App() {
     }
 
     const layer = canvasContainerRef.current;
-    if (layer) layer.style.cursor = 'text';
-  }, [captureSnapshot, currentPath, fillColor, isDrawing, pushHistory, strokeColor, strokeWidth, updateStatus]);
+    if (layer) {
+      if (selectedTool === 'draw' || selectedTool === 'erase') {
+        layer.style.cursor = 'crosshair';
+      } else {
+        layer.style.cursor = 'text';
+      }
+    }
+  }, [captureSnapshot, currentPath, fillColor, isDrawing, isErasing, pushHistory, selectedTool, strokeColor, strokeWidth, updateStatus]);
 
   const handleCanvasContextMenu = useCallback((e) => {
     e.preventDefault();
@@ -1162,6 +1322,8 @@ function App() {
     setShapes([]);
     setHoverShapeId(null);
     setIsDrawing(false);
+    setIsErasing(false);
+    setEraserPointer(null);
     setCurrentPath([]);
     pushHistory(captureSnapshot());
     updateStatus('Canvas cleared');
@@ -1184,7 +1346,15 @@ function App() {
 
   const handleToolSelect = useCallback((toolType) => {
     setSelectedTool(toolType);
+    setIsDrawing(false);
+    setCurrentPath([]);
+    setIsErasing(false);
+    setEraserPointer(null);
     setMobileToolsOpen(false);
+  }, []);
+
+  const adjustEraseSize = useCallback((delta) => {
+    setEraseSize((current) => clamp(current + delta, 8, 96));
   }, []);
 
   const toggleMobileTools = useCallback(() => {
@@ -1194,17 +1364,40 @@ function App() {
   const renderToolbarControls = () => (
     <>
       {TOOL_ITEMS.map((tool) => (
-        <button
-          key={tool.type}
-          type="button"
-          title={tool.label}
-          draggable
-          onDragStart={(e) => handleToolDragStart(e, tool.type)}
-          onClick={() => handleToolSelect(tool.type)}
-          className={`tool-btn ${tool.type === selectedTool ? 'active' : ''}`}
-        >
-          {tool.icon}
-        </button>
+        <React.Fragment key={tool.type}>
+          <button
+            type="button"
+            title={tool.label}
+            draggable
+            onDragStart={(e) => handleToolDragStart(e, tool.type)}
+            onClick={() => handleToolSelect(tool.type)}
+            className={`tool-btn ${tool.type === selectedTool ? 'active' : ''}`}
+          >
+            {tool.icon}
+          </button>
+
+          {tool.type === 'erase' && (
+            <div className="eraser-size-inline" title="Click + or - to change eraser size">
+              <button
+                type="button"
+                className="eraser-size-step"
+                onClick={() => adjustEraseSize(-2)}
+                aria-label="Decrease eraser size"
+              >
+                -
+              </button>
+              <span className="eraser-size-value">{eraseSize}</span>
+              <button
+                type="button"
+                className="eraser-size-step"
+                onClick={() => adjustEraseSize(2)}
+                aria-label="Increase eraser size"
+              >
+                +
+              </button>
+            </div>
+          )}
+        </React.Fragment>
       ))}
 
       <div className="toolbar-divider" />
@@ -1295,13 +1488,14 @@ function App() {
           <option key={size} value={size}>{size}px</option>
         ))}
       </select>
+
     </>
   );
 
   const handleDropOnCanvas = useCallback((e) => {
     e.preventDefault();
     const toolType = e.dataTransfer.getData('application/x-codeipad-tool');
-    if (!toolType || toolType === 'draw' || toolType === 'select') return;
+    if (!toolType || toolType === 'draw' || toolType === 'erase' || toolType === 'select') return;
 
     const point = getMousePoint(e);
     if (!point) return;
@@ -1361,7 +1555,10 @@ function App() {
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
-          onMouseLeave={handleCanvasMouseUp}
+          onMouseLeave={() => {
+            setEraserPointer(null);
+            handleCanvasMouseUp();
+          }}
         >
           <canvas ref={canvasRef} className="canvas-element" style={{ pointerEvents: 'auto' }} />
         </div>
