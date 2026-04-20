@@ -1357,9 +1357,20 @@ function App() {
     setEraseSize((current) => clamp(current + delta, 8, 96));
   }, []);
 
+  const applyEditorFontSize = useCallback((nextSize) => {
+    const clamped = clamp(nextSize, 10, 72);
+    setEditorFontSize(clamped);
+    monacoEditorRef.current?.updateOptions({ fontSize: clamped });
+  }, []);
+
   const toggleMobileTools = useCallback(() => {
     setMobileToolsOpen((current) => !current);
   }, []);
+
+  const fontSizeOptions = useMemo(() => {
+    const merged = new Set([...FONT_SIZE_PRESETS, editorFontSize]);
+    return [...merged].sort((a, b) => a - b);
+  }, [editorFontSize]);
 
   const renderToolbarControls = () => (
     <>
@@ -1416,25 +1427,25 @@ function App() {
       <button
         type="button"
         className="toolbar-icon-btn"
-        onClick={() => setEditorFontSize((prev) => clamp(prev - 1, 10, 72))}
+        onClick={() => applyEditorFontSize(editorFontSize - 1)}
         title="Decrease Font"
       >
         A-
       </button>
       <select
         value={editorFontSize}
-        onChange={(e) => setEditorFontSize(Number(e.target.value))}
+        onChange={(e) => applyEditorFontSize(Number(e.target.value))}
         title="Editor Font Size"
         className="toolbar-select"
       >
-        {FONT_SIZE_PRESETS.map((size) => (
+        {fontSizeOptions.map((size) => (
           <option key={size} value={size}>{size}px</option>
         ))}
       </select>
       <button
         type="button"
         className="toolbar-icon-btn"
-        onClick={() => setEditorFontSize((prev) => clamp(prev + 1, 10, 72))}
+        onClick={() => applyEditorFontSize(editorFontSize + 1)}
         title="Increase Font"
       >
         A+
