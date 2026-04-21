@@ -13,20 +13,20 @@ const HANDLE_SIZE = 8;
 const ROTATABLE_TYPES = new Set(['line', 'arrow', 'double-arrow', 'curved-arrow']);
 
 const TOOL_ITEMS = [
-  { type: 'select', label: 'Select / Move', icon: '⌖' },
-  { type: 'draw', label: 'Freehand Draw', icon: '✎' },
-  { type: 'erase', label: 'Erase Freehand', icon: '⌫' },
-  { type: 'rectangle', label: 'Rectangle', icon: '▭' },
-  { type: 'circle', label: 'Circle', icon: '◯' },
-  { type: 'line', label: 'Straight Line', icon: '／' },
-  { type: 'arrow', label: 'Arrow', icon: '→' },
-  { type: 'double-arrow', label: 'Double Arrow', icon: '↔' },
-  { type: 'curved-arrow', label: 'Curved Arrow', icon: '⤴' },
-  { type: 'text', label: 'Text Note', icon: 'T' },
-  { type: 'array', label: 'Array', icon: 'Arr' },
-  { type: 'sll', label: 'Singly Linked List', icon: 'SLL' },
-  { type: 'dll', label: 'Doubly Linked List', icon: 'DLL' },
-  { type: 'tree', label: 'Tree', icon: '🌳' }
+  { type: 'select', label: 'Select / Move', short: 'Sel', icon: '⌖' },
+  { type: 'draw', label: 'Freehand Draw', short: 'Draw', icon: '✎' },
+  { type: 'erase', label: 'Erase Freehand', short: 'Erase', icon: '⌫' },
+  { type: 'rectangle', label: 'Rectangle', short: 'Rect', icon: '▭' },
+  { type: 'circle', label: 'Circle', short: 'Circle', icon: '◯' },
+  { type: 'line', label: 'Straight Line', short: 'Line', icon: '／' },
+  { type: 'arrow', label: 'Arrow', short: 'Arrow', icon: '→' },
+  { type: 'double-arrow', label: 'Double Arrow', short: 'D-Arr', icon: '↔' },
+  { type: 'curved-arrow', label: 'Curved Arrow', short: 'Curve', icon: '⤴' },
+  { type: 'text', label: 'Text Note', short: 'Text', icon: 'T' },
+  { type: 'array', label: 'Array', short: 'Array', icon: 'Arr' },
+  { type: 'sll', label: 'Singly Linked List', short: 'SLL', icon: 'SLL' },
+  { type: 'dll', label: 'Doubly Linked List', short: 'DLL', icon: 'DLL' },
+  { type: 'tree', label: 'Tree', short: 'Tree', icon: '🌳' }
 ];
 
 const LANGUAGES = [
@@ -586,6 +586,7 @@ function App() {
   const [history, setHistory] = useState({ items: [], index: -1 });
   const [selectedTool, setSelectedTool] = useState('select');
   const [shapes, setShapes] = useState([]);
+  const [selectedShapeId, setSelectedShapeId] = useState(null);
   const [hoverShapeId, setHoverShapeId] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
@@ -847,7 +848,7 @@ function App() {
       drawShape(ctx, shape, scrollOffsetRef.current);
     });
 
-    const focusedShapeId = rotateRef.current?.shapeId || resizeRef.current?.shapeId || dragRef.current?.shapeId || hoverShapeId;
+    const focusedShapeId = rotateRef.current?.shapeId || resizeRef.current?.shapeId || dragRef.current?.shapeId || selectedShapeId || hoverShapeId;
     if (focusedShapeId) {
       const focusedShape = shapes.find((shape) => shape.id === focusedShapeId);
       if (focusedShape) {
@@ -882,7 +883,7 @@ function App() {
       ctx.stroke();
       ctx.restore();
     }
-  }, [currentPath, eraseSize, eraserPointer, hoverShapeId, isDrawing, selectedTool, shapes, strokeColor, strokeWidth, viewportTick]);
+  }, [currentPath, eraseSize, eraserPointer, hoverShapeId, isDrawing, selectedShapeId, selectedTool, shapes, strokeColor, strokeWidth, viewportTick]);
 
   const applyResize = useCallback((shape, bounds, handle, point) => {
     const startLeft = bounds.left;
@@ -1029,6 +1030,7 @@ function App() {
       resizeRef.current = null;
       rotateRef.current = null;
       setHoverShapeId(null);
+      setSelectedShapeId(null);
       setEraserPointer(point);
       erasedDuringStrokeRef.current = false;
       setIsErasing(true);
@@ -1041,6 +1043,7 @@ function App() {
       resizeRef.current = null;
       rotateRef.current = null;
       setHoverShapeId(null);
+      setSelectedShapeId(null);
       setCurrentPath([point]);
       setIsDrawing(true);
       const layer = canvasContainerRef.current;
@@ -1075,6 +1078,7 @@ function App() {
           };
         }
         setHoverShapeId(shape.id);
+        setSelectedShapeId(shape.id);
         updateCursor(point);
         return;
       }
@@ -1093,11 +1097,13 @@ function App() {
         shapeY: selectedShape.y
       };
       setHoverShapeId(selectedShape.id);
+      setSelectedShapeId(selectedShape.id);
       updateCursor(point);
       return;
     }
 
     setHoverShapeId(null);
+    setSelectedShapeId(null);
 
     passPointerThroughToEditor(e);
   }, [eraseAtPoint, getMousePoint, passPointerThroughToEditor, selectedTool, updateCursor]);
@@ -1134,6 +1140,7 @@ function App() {
       shapesRef.current = nextShapes;
       setShapes(nextShapes);
       setHoverShapeId(shapeId);
+      setSelectedShapeId(shapeId);
       updateCursor(point);
       return;
     }
@@ -1152,6 +1159,7 @@ function App() {
       shapesRef.current = nextShapes;
       setShapes(nextShapes);
       setHoverShapeId(shapeId);
+      setSelectedShapeId(shapeId);
       updateCursor(point);
       return;
     }
@@ -1172,6 +1180,7 @@ function App() {
       shapesRef.current = nextShapes;
       setShapes(nextShapes);
       setHoverShapeId(dragRef.current.shapeId);
+      setSelectedShapeId(dragRef.current.shapeId);
       updateCursor(point);
       return;
     }
@@ -1262,10 +1271,13 @@ function App() {
     const nextShapes = shapesRef.current.filter((shape) => shape.id !== hitShape.id);
     shapesRef.current = nextShapes;
     setShapes(nextShapes);
+    if (selectedShapeId === hitShape.id) {
+      setSelectedShapeId(null);
+    }
     setHoverShapeId(null);
     updateStatus(`${hitShape.type} deleted`);
     pushHistory(captureSnapshot());
-  }, [captureSnapshot, getMousePoint, pushHistory, updateStatus]);
+  }, [captureSnapshot, getMousePoint, pushHistory, selectedShapeId, updateStatus]);
 
   const handleUndo = useCallback(() => {
     setHistory((prev) => {
@@ -1320,6 +1332,7 @@ function App() {
   const clearCanvas = useCallback(() => {
     shapesRef.current = [];
     setShapes([]);
+    setSelectedShapeId(null);
     setHoverShapeId(null);
     setIsDrawing(false);
     setIsErasing(false);
@@ -1384,7 +1397,8 @@ function App() {
             onClick={() => handleToolSelect(tool.type)}
             className={`tool-btn ${tool.type === selectedTool ? 'active' : ''}`}
           >
-            {tool.icon}
+            <span className="tool-btn-icon">{tool.icon}</span>
+            <span className="tool-btn-label">{tool.short}</span>
           </button>
 
           {tool.type === 'erase' && (
@@ -1413,16 +1427,18 @@ function App() {
 
       <div className="toolbar-divider" />
 
-      <select
-        value={language}
-        onChange={(e) => setLanguage(e.target.value)}
-        title="Language"
-        className="toolbar-select"
-      >
-        {LANGUAGES.map((item) => (
-          <option key={item.value} value={item.value}>{item.label}</option>
-        ))}
-      </select>
+      <label className="toolbar-field" title="Language">
+        <span className="toolbar-field-label">Lang</span>
+        <select
+          value={language}
+          onChange={(e) => setLanguage(e.target.value)}
+          className="toolbar-select"
+        >
+          {LANGUAGES.map((item) => (
+            <option key={item.value} value={item.value}>{item.label}</option>
+          ))}
+        </select>
+      </label>
 
       <button
         type="button"
@@ -1432,16 +1448,18 @@ function App() {
       >
         A-
       </button>
-      <select
-        value={editorFontSize}
-        onChange={(e) => applyEditorFontSize(Number(e.target.value))}
-        title="Editor Font Size"
-        className="toolbar-select"
-      >
-        {fontSizeOptions.map((size) => (
-          <option key={size} value={size}>{size}px</option>
-        ))}
-      </select>
+      <label className="toolbar-field" title="Editor Font Size">
+        <span className="toolbar-field-label">Font</span>
+        <select
+          value={editorFontSize}
+          onChange={(e) => applyEditorFontSize(Number(e.target.value))}
+          className="toolbar-select"
+        >
+          {fontSizeOptions.map((size) => (
+            <option key={size} value={size}>{size}px</option>
+          ))}
+        </select>
+      </label>
       <button
         type="button"
         className="toolbar-icon-btn"
@@ -1451,27 +1469,31 @@ function App() {
         A+
       </button>
 
-      <select
-        value={blockSize}
-        onChange={(e) => setBlockSize(Number(e.target.value))}
-        title="Block Size"
-        className="toolbar-select"
-      >
-        {BLOCK_SIZE_PRESETS.map((size) => (
-          <option key={size} value={size}>B{size}</option>
-        ))}
-      </select>
+      <label className="toolbar-field" title="Block Size">
+        <span className="toolbar-field-label">Block</span>
+        <select
+          value={blockSize}
+          onChange={(e) => setBlockSize(Number(e.target.value))}
+          className="toolbar-select"
+        >
+          {BLOCK_SIZE_PRESETS.map((size) => (
+            <option key={size} value={size}>B{size}</option>
+          ))}
+        </select>
+      </label>
 
-      <select
-        value={elementCount}
-        onChange={(e) => setElementCount(Number(e.target.value))}
-        title="Elements Count"
-        className="toolbar-select"
-      >
-        {ELEMENT_COUNT_PRESETS.map((count) => (
-          <option key={count} value={count}>N{count}</option>
-        ))}
-      </select>
+      <label className="toolbar-field" title="Elements Count">
+        <span className="toolbar-field-label">Count</span>
+        <select
+          value={elementCount}
+          onChange={(e) => setElementCount(Number(e.target.value))}
+          className="toolbar-select"
+        >
+          {ELEMENT_COUNT_PRESETS.map((count) => (
+            <option key={count} value={count}>N{count}</option>
+          ))}
+        </select>
+      </label>
 
       <input
         type="color"
@@ -1489,16 +1511,18 @@ function App() {
         className="toolbar-color"
       />
 
-      <select
-        value={strokeWidth}
-        onChange={(e) => setStrokeWidth(Number(e.target.value))}
-        title="Stroke Width"
-        className="toolbar-select"
-      >
-        {SIZE_PRESETS.map((size) => (
-          <option key={size} value={size}>{size}px</option>
-        ))}
-      </select>
+      <label className="toolbar-field" title="Stroke Width">
+        <span className="toolbar-field-label">Stroke</span>
+        <select
+          value={strokeWidth}
+          onChange={(e) => setStrokeWidth(Number(e.target.value))}
+          className="toolbar-select"
+        >
+          {SIZE_PRESETS.map((size) => (
+            <option key={size} value={size}>{size}px</option>
+          ))}
+        </select>
+      </label>
 
     </>
   );
