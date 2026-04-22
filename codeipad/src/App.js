@@ -50,6 +50,25 @@ const FONT_SIZE_PRESETS = [12, 14, 15, 16, 18, 20, 22, 24, 28, 32, 36, 48, 60, 7
 const BLOCK_SIZE_PRESETS = [40, 50, 60, 70, 80, 100];
 const ELEMENT_COUNT_PRESETS = [1, 2, 3, 4, 5, 6, 7, 8];
 
+const SHAPE_PANEL_GROUPS = [
+  {
+    title: 'Shapes',
+    items: ['rectangle', 'circle', 'line', 'text']
+  },
+  {
+    title: 'Arrows',
+    items: ['arrow', 'double-arrow', 'curved-arrow']
+  },
+  {
+    title: 'Data Structures',
+    items: ['array', 'sll', 'dll', 'tree']
+  },
+  {
+    title: 'Drawing',
+    items: ['draw', 'erase', 'select']
+  }
+];
+
 function hexToRgba(hex, alpha = 0.12) {
   const normalized = hex.replace('#', '');
   const full = normalized.length === 3
@@ -552,10 +571,11 @@ const MonacoPane = React.memo(function MonacoPane({
   options,
   onEditorMount,
   onDrop,
-  onDragOver
+  onDragOver,
+  onEditorDoubleClick
 }) {
   return (
-    <div className="editor-wrapper" onDrop={onDrop} onDragOver={onDragOver}>
+    <div className="editor-wrapper" onDrop={onDrop} onDragOver={onDragOver} onDoubleClick={onEditorDoubleClick}>
       <Editor
         height="100%"
         language={language}
@@ -573,6 +593,9 @@ function App() {
   const [theme, setTheme] = useState('light');
   const [editorReady, setEditorReady] = useState(false);
   const [mobileToolsOpen, setMobileToolsOpen] = useState(false);
+  const [isShapesPanelPinned, setIsShapesPanelPinned] = useState(false);
+  const [isShapesPanelDragging, setIsShapesPanelDragging] = useState(false);
+  const [isShapesPanelHot, setIsShapesPanelHot] = useState(false);
 
   const [strokeColor, setStrokeColor] = useState('#2563eb');
   const [fillColor, setFillColor] = useState('#2563eb');
@@ -585,6 +608,7 @@ function App() {
 
   const [history, setHistory] = useState({ items: [], index: -1 });
   const [selectedTool, setSelectedTool] = useState('select');
+  const [interactionMode, setInteractionMode] = useState('code');
   const [shapes, setShapes] = useState([]);
   const [selectedShapeId, setSelectedShapeId] = useState(null);
   const [hoverShapeId, setHoverShapeId] = useState(null);
@@ -630,20 +654,15 @@ function App() {
   }, []);
 
   const setCanvasPointerEvents = useCallback((value) => {
-    const canvas = canvasRef.current;
     const layer = canvasContainerRef.current;
-
-    if (canvas) canvas.style.pointerEvents = value;
-    if (layer) layer.style.pointerEvents = value === 'none' ? 'none' : 'auto';
+    if (layer) layer.style.pointerEvents = value;
   }, []);
 
   useEffect(() => {
-    setCanvasPointerEvents('auto');
-  }, [setCanvasPointerEvents]);
+    setCanvasPointerEvents(interactionMode === 'shape' ? 'auto' : 'none');
+  }, [interactionMode, setCanvasPointerEvents]);
 
   const passPointerThroughToEditor = useCallback((sourceEvent) => {
-    setCanvasPointerEvents('none');
-
     const editor = monacoEditorRef.current;
     if (editor) {
       const target = editor.getTargetAtClientPoint?.(sourceEvent.clientX, sourceEvent.clientY);
@@ -652,12 +671,66 @@ function App() {
       }
       editor.focus();
     }
+  }, []);
 
-    window.setTimeout(() => {
-      setCanvasPointerEvents('auto');
-      monacoEditorRef.current?.focus();
-    }, 0);
-  }, [setCanvasPointerEvents]);
+  const findTopShapeAtPoint = useCallback((point, { includePen = false } = {}) => {
+    return [...shapesRef.current].reverse().find((shape) => {
+      if (!includePen && shape.type === 'pen') return false;
+      return isPointInShape(point, shape, scrollOffsetRef.current);
+    });
+  }, []);
+
+  const enterShapeMode = useCallback((shapeId) => {
+    if (!shapeId) return;
+    setInteractionMode('shape');
+    setSelectedShapeId(shapeId);
+    setHoverShapeId(shapeId);
+    updateStatus('Shape mode');
+  }, [updateStatus]);
+
+  const exitShapeMode = useCallback((sourceEvent) => {
+    dragRef.current = null;
+    resizeRef.current = null;
+    rotateRef.current = null;
+    setSelectedShapeId(null);
+    setHoverShapeId(null);
+    setInteractionMode('code');
+    if (sourceEvent) {
+      passPointerThroughToEditor(sourceEvent);
+    }
+    updateStatus('Code mode');
+  }, [passPointerThroughToEditor, updateStatus]);
+
+  const handleCanvasDoubleClick = useCallback((e) => {
+    const point = getMousePoint(e);
+    if (!point) return;
+
+    const hitShape = findTopShapeAtPoint(point);
+
+    if (hitShape) {
+      enterShapeMode(hitShape.id);
+      return;
+    }
+
+    exitShapeMode(e);
+  }, [enterShapeMode, exitShapeMode, findTopShapeAtPoint, getMousePoint]);
+
+  const handleEditorDoubleClick = useCallback((e) => {
+    const point = getMousePoint(e);
+    if (!point) {
+      exitShapeMode(e);
+      return;
+    }
+
+    const hitShape = findTopShapeAtPoint(point);
+
+    if (hitShape) {
+      enterShapeMode(hitShape.id);
+      return;
+    }
+
+    exitShapeMode(e);
+  }, [enterShapeMode, exitShapeMode, findTopShapeAtPoint, getMousePoint]);
 
   const captureSnapshot = useCallback(() => {
     return {
@@ -762,6 +835,11 @@ function App() {
     const layer = canvasContainerRef.current;
     if (!layer || !point) return;
 
+    if (interactionMode !== 'shape') {
+      layer.style.cursor = 'text';
+      return;
+    }
+
     if (selectedTool === 'erase' && !dragRef.current && !resizeRef.current && !rotateRef.current) {
       layer.style.cursor = 'crosshair';
       return;
@@ -797,7 +875,7 @@ function App() {
       return true;
     });
 
-    if (hitShape && hitShape.type !== 'pen' && hitShape.type !== 'text') {
+    if (hitShape && hitShape.type !== 'pen') {
       const bounds = getShapeBounds(hitShape, scrollOffsetRef.current);
       const handle = getHandleAtPoint(viewportPoint, bounds, hitShape.type);
       if (handle) {
@@ -807,7 +885,7 @@ function App() {
     }
 
     layer.style.cursor = hitShape ? 'move' : 'text';
-  }, [selectedTool]);
+  }, [interactionMode, selectedTool]);
 
   const eraseAtPoint = useCallback((point) => {
     const radius = Math.max(4, eraseSize / 2);
@@ -848,9 +926,8 @@ function App() {
       drawShape(ctx, shape, scrollOffsetRef.current);
     });
 
-    const focusedShapeId = rotateRef.current?.shapeId || resizeRef.current?.shapeId || dragRef.current?.shapeId || selectedShapeId || hoverShapeId;
-    if (focusedShapeId) {
-      const focusedShape = shapes.find((shape) => shape.id === focusedShapeId);
+    if (interactionMode === 'shape' && selectedShapeId) {
+      const focusedShape = shapes.find((shape) => shape.id === selectedShapeId);
       if (focusedShape) {
         drawResizeHandles(ctx, focusedShape, scrollOffsetRef.current);
       }
@@ -883,7 +960,7 @@ function App() {
       ctx.stroke();
       ctx.restore();
     }
-  }, [currentPath, eraseSize, eraserPointer, hoverShapeId, isDrawing, selectedShapeId, selectedTool, shapes, strokeColor, strokeWidth, viewportTick]);
+  }, [currentPath, eraseSize, eraserPointer, interactionMode, isDrawing, selectedShapeId, selectedTool, shapes, strokeColor, strokeWidth, viewportTick]);
 
   const applyResize = useCallback((shape, bounds, handle, point) => {
     const startLeft = bounds.left;
@@ -1025,19 +1102,12 @@ function App() {
     const point = getMousePoint(e);
     if (!point) return;
 
-    if (selectedTool === 'erase') {
-      dragRef.current = null;
-      resizeRef.current = null;
-      rotateRef.current = null;
-      setHoverShapeId(null);
-      setSelectedShapeId(null);
-      setEraserPointer(point);
-      erasedDuringStrokeRef.current = false;
-      setIsErasing(true);
-      eraseAtPoint(point);
+    if (interactionMode !== 'shape') {
+      passPointerThroughToEditor(e);
       return;
     }
 
+    // Draw tool: start new path
     if (selectedTool === 'draw') {
       dragRef.current = null;
       resizeRef.current = null;
@@ -1051,6 +1121,20 @@ function App() {
       return;
     }
 
+    // Erase tool: start erasing
+    if (selectedTool === 'erase') {
+      dragRef.current = null;
+      resizeRef.current = null;
+      rotateRef.current = null;
+      setHoverShapeId(null);
+      setSelectedShapeId(null);
+      setEraserPointer(point);
+      erasedDuringStrokeRef.current = false;
+      setIsErasing(true);
+      eraseAtPoint(point);
+      return;
+    }
+
     const viewportPoint = {
       x: point.x - scrollOffsetRef.current.left,
       y: point.y - scrollOffsetRef.current.top
@@ -1060,7 +1144,7 @@ function App() {
 
     for (let i = 0; i < orderedShapes.length; i += 1) {
       const shape = orderedShapes[i];
-      if (shape.type === 'pen' || shape.type === 'text') continue;
+      if (shape.type === 'pen') continue;
 
       const bounds = getShapeBounds(shape, scrollOffsetRef.current);
       const handle = getHandleAtPoint(viewportPoint, bounds, shape.type);
@@ -1102,21 +1186,26 @@ function App() {
       return;
     }
 
+    // In shape mode, single-clicking empty space just clears hover.
     setHoverShapeId(null);
-    setSelectedShapeId(null);
-
-    passPointerThroughToEditor(e);
-  }, [eraseAtPoint, getMousePoint, passPointerThroughToEditor, selectedTool, updateCursor]);
+    updateCursor(point);
+  }, [eraseAtPoint, getMousePoint, interactionMode, passPointerThroughToEditor, selectedTool, updateCursor]);
 
   const handleCanvasMouseMove = useCallback((e) => {
     const point = getMousePoint(e);
     if (!point) return;
 
-    if (isDrawing) {
+    if (interactionMode !== 'shape') {
+      return;
+    }
+
+    // Draw tool: accumulate points to current path
+    if (selectedTool === 'draw' && isDrawing) {
       setCurrentPath((prev) => [...prev, point]);
       return;
     }
 
+    // Erase tool: track pointer and erase at location
     if (selectedTool === 'erase') {
       setEraserPointer(point);
       if (isErasing) {
@@ -1191,9 +1280,14 @@ function App() {
     setHoverShapeId(hovered?.id ?? null);
 
     updateCursor(point);
-  }, [applyResize, eraseAtPoint, getMousePoint, isDrawing, isErasing, selectedTool, updateCursor]);
+  }, [applyResize, eraseAtPoint, getMousePoint, interactionMode, isDrawing, isErasing, selectedTool, updateCursor]);
 
   const handleCanvasMouseUp = useCallback(() => {
+    if (interactionMode !== 'shape') {
+      return;
+    }
+
+    // Finish erasing stroke
     if (isErasing) {
       setIsErasing(false);
       if (erasedDuringStrokeRef.current) {
@@ -1201,8 +1295,10 @@ function App() {
         updateStatus('Erased');
       }
       erasedDuringStrokeRef.current = false;
+      return;
     }
 
+    // Finish drawing stroke
     if (isDrawing) {
       if (currentPath.length > 1) {
         const penShape = {
@@ -1225,6 +1321,7 @@ function App() {
 
       setIsDrawing(false);
       setCurrentPath([]);
+      return;
     }
 
     if (dragRef.current) {
@@ -1251,10 +1348,10 @@ function App() {
       if (selectedTool === 'draw' || selectedTool === 'erase') {
         layer.style.cursor = 'crosshair';
       } else {
-        layer.style.cursor = 'text';
+        layer.style.cursor = 'default';
       }
     }
-  }, [captureSnapshot, currentPath, fillColor, isDrawing, isErasing, pushHistory, selectedTool, strokeColor, strokeWidth, updateStatus]);
+  }, [captureSnapshot, currentPath, fillColor, interactionMode, isDrawing, isErasing, pushHistory, selectedTool, strokeColor, strokeWidth, updateStatus]);
 
   const handleCanvasContextMenu = useCallback((e) => {
     e.preventDefault();
@@ -1299,6 +1396,12 @@ function App() {
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        exitShapeMode();
+        e.preventDefault();
+        return;
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         handleUndo();
         e.preventDefault();
@@ -1312,7 +1415,7 @@ function App() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleRedo, handleUndo]);
+  }, [exitShapeMode, handleRedo, handleUndo]);
 
   useEffect(() => {
     latestStateRef.current = { language, theme };
@@ -1338,6 +1441,10 @@ function App() {
     setIsErasing(false);
     setEraserPointer(null);
     setCurrentPath([]);
+    dragRef.current = null;
+    resizeRef.current = null;
+    rotateRef.current = null;
+    setInteractionMode('code');
     pushHistory(captureSnapshot());
     updateStatus('Canvas cleared');
   }, [captureSnapshot, pushHistory, updateStatus]);
@@ -1357,14 +1464,42 @@ function App() {
     e.dataTransfer.setData('application/x-codeipad-tool', toolType);
   }, []);
 
+  const handleShapesPanelDragStart = useCallback((e, toolType) => {
+    handleToolDragStart(e, toolType);
+    e.dataTransfer.setData('shape', toolType);
+    setIsShapesPanelDragging(true);
+    e.dataTransfer.effectAllowed = 'copyMove';
+  }, [handleToolDragStart]);
+
+  const handleShapesPanelDragEnd = useCallback(() => {
+    setIsShapesPanelDragging(false);
+  }, []);
+
   const handleToolSelect = useCallback((toolType) => {
     setSelectedTool(toolType);
+    if (toolType === 'draw' || toolType === 'erase') {
+      setInteractionMode('shape');
+      setSelectedShapeId(null);
+      setHoverShapeId(null);
+      updateStatus(toolType === 'draw' ? 'Draw mode' : 'Erase mode');
+    }
+
+    if (toolType === 'select') {
+      setInteractionMode('code');
+      setSelectedShapeId(null);
+      setHoverShapeId(null);
+      monacoEditorRef.current?.focus();
+      updateStatus('Code mode');
+    }
     setIsDrawing(false);
     setCurrentPath([]);
     setIsErasing(false);
     setEraserPointer(null);
+    dragRef.current = null;
+    resizeRef.current = null;
+    rotateRef.current = null;
     setMobileToolsOpen(false);
-  }, []);
+  }, [updateStatus]);
 
   const adjustEraseSize = useCallback((delta) => {
     setEraseSize((current) => clamp(current + delta, 8, 96));
@@ -1380,164 +1515,248 @@ function App() {
     setMobileToolsOpen((current) => !current);
   }, []);
 
+  const toggleShapesPanelPinned = useCallback(() => {
+    setIsShapesPanelPinned((current) => !current);
+  }, []);
+
   const fontSizeOptions = useMemo(() => {
     const merged = new Set([...FONT_SIZE_PRESETS, editorFontSize]);
     return [...merged].sort((a, b) => a - b);
   }, [editorFontSize]);
 
-  const renderToolbarControls = () => (
-    <>
-      {TOOL_ITEMS.map((tool) => (
-        <React.Fragment key={tool.type}>
-          <button
-            type="button"
-            title={tool.label}
-            draggable
-            onDragStart={(e) => handleToolDragStart(e, tool.type)}
-            onClick={() => handleToolSelect(tool.type)}
-            className={`tool-btn ${tool.type === selectedTool ? 'active' : ''}`}
-          >
-            <span className="tool-btn-icon">{tool.icon}</span>
-            <span className="tool-btn-label">{tool.short}</span>
-          </button>
+  const renderToolbarControls = () => {
+    const basicTools = TOOL_ITEMS.slice(0, 3);
 
-          {tool.type === 'erase' && (
-            <div className="eraser-size-inline" title="Click + or - to change eraser size">
+    return (
+        <>
+          {basicTools.map((tool) => (
+            <React.Fragment key={tool.type}>
               <button
                 type="button"
-                className="eraser-size-step"
-                onClick={() => adjustEraseSize(-2)}
-                aria-label="Decrease eraser size"
+                title={tool.label}
+                draggable
+                onDragStart={(e) => handleToolDragStart(e, tool.type)}
+                onClick={() => handleToolSelect(tool.type)}
+                className={`tool-btn ${tool.type === selectedTool ? 'active' : ''}`}
               >
-                -
+                <span className="tool-btn-icon">{tool.icon}</span>
               </button>
-              <span className="eraser-size-value">{eraseSize}</span>
-              <button
-                type="button"
-                className="eraser-size-step"
-                onClick={() => adjustEraseSize(2)}
-                aria-label="Increase eraser size"
-              >
-                +
-              </button>
-            </div>
-          )}
-        </React.Fragment>
-      ))}
 
-      <div className="toolbar-divider" />
-
-      <label className="toolbar-field" title="Language">
-        <span className="toolbar-field-label">Lang</span>
-        <select
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-          className="toolbar-select"
-        >
-          {LANGUAGES.map((item) => (
-            <option key={item.value} value={item.value}>{item.label}</option>
+              {tool.type === 'erase' && (
+                <div className="eraser-size-inline" title="Eraser Size">
+                  <button
+                    type="button"
+                    className="eraser-size-step"
+                    onClick={() => adjustEraseSize(-2)}
+                    aria-label="Decrease eraser size"
+                  >
+                    −
+                  </button>
+                  <span className="eraser-size-value">{eraseSize}</span>
+                  <button
+                    type="button"
+                    className="eraser-size-step"
+                    onClick={() => adjustEraseSize(2)}
+                    aria-label="Increase eraser size"
+                  >
+                    +
+                  </button>
+                </div>
+              )}
+            </React.Fragment>
           ))}
-        </select>
-      </label>
 
-      <button
-        type="button"
-        className="toolbar-icon-btn"
-        onClick={() => applyEditorFontSize(editorFontSize - 1)}
-        title="Decrease Font"
-      >
-        A-
-      </button>
-      <label className="toolbar-field" title="Editor Font Size">
-        <span className="toolbar-field-label">Font</span>
-        <select
-          value={editorFontSize}
-          onChange={(e) => applyEditorFontSize(Number(e.target.value))}
-          className="toolbar-select"
-        >
-          {fontSizeOptions.map((size) => (
-            <option key={size} value={size}>{size}px</option>
-          ))}
-        </select>
-      </label>
-      <button
-        type="button"
-        className="toolbar-icon-btn"
-        onClick={() => applyEditorFontSize(editorFontSize + 1)}
-        title="Increase Font"
-      >
-        A+
-      </button>
+          <div className="toolbar-divider" />
 
-      <label className="toolbar-field" title="Block Size">
-        <span className="toolbar-field-label">Block</span>
-        <select
-          value={blockSize}
-          onChange={(e) => setBlockSize(Number(e.target.value))}
-          className="toolbar-select"
-        >
-          {BLOCK_SIZE_PRESETS.map((size) => (
-            <option key={size} value={size}>B{size}</option>
-          ))}
-        </select>
-      </label>
+          <label className="toolbar-field" title="Programming Language">
+            <span className="toolbar-field-label">Lang</span>
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="toolbar-select"
+            >
+              {LANGUAGES.map((item) => (
+                <option key={item.value} value={item.value}>{item.label}</option>
+              ))}
+            </select>
+          </label>
 
-      <label className="toolbar-field" title="Elements Count">
-        <span className="toolbar-field-label">Count</span>
-        <select
-          value={elementCount}
-          onChange={(e) => setElementCount(Number(e.target.value))}
-          className="toolbar-select"
-        >
-          {ELEMENT_COUNT_PRESETS.map((count) => (
-            <option key={count} value={count}>N{count}</option>
-          ))}
-        </select>
-      </label>
+          <label className="toolbar-field" title="Font Size">
+            <span className="toolbar-field-label">Font</span>
+            <select
+              value={editorFontSize}
+              onChange={(e) => applyEditorFontSize(Number(e.target.value))}
+              className="toolbar-select"
+            >
+              {fontSizeOptions.map((size) => (
+                <option key={size} value={size}>{size}px</option>
+              ))}
+            </select>
+          </label>
 
-      <input
-        type="color"
-        value={strokeColor}
-        onChange={(e) => setStrokeColor(e.target.value)}
-        title="Stroke Color"
-        className="toolbar-color"
-      />
+          <label className="toolbar-field" title="Block Size">
+            <span className="toolbar-field-label">Block</span>
+            <select
+              value={blockSize}
+              onChange={(e) => setBlockSize(Number(e.target.value))}
+              className="toolbar-select"
+            >
+              {BLOCK_SIZE_PRESETS.map((size) => (
+                <option key={size} value={size}>B{size}</option>
+              ))}
+            </select>
+          </label>
 
-      <input
-        type="color"
-        value={fillColor}
-        onChange={(e) => setFillColor(e.target.value)}
-        title="Fill Color"
-        className="toolbar-color"
-      />
+          <label className="toolbar-field" title="Elements Count">
+            <span className="toolbar-field-label">Count</span>
+            <select
+              value={elementCount}
+              onChange={(e) => setElementCount(Number(e.target.value))}
+              className="toolbar-select"
+            >
+              {ELEMENT_COUNT_PRESETS.map((count) => (
+                <option key={count} value={count}>N{count}</option>
+              ))}
+            </select>
+          </label>
 
-      <label className="toolbar-field" title="Stroke Width">
-        <span className="toolbar-field-label">Stroke</span>
-        <select
-          value={strokeWidth}
-          onChange={(e) => setStrokeWidth(Number(e.target.value))}
-          className="toolbar-select"
-        >
-          {SIZE_PRESETS.map((size) => (
-            <option key={size} value={size}>{size}px</option>
-          ))}
-        </select>
-      </label>
+          <div className="toolbar-divider" />
 
-    </>
-  );
+          <input
+            type="color"
+            value={strokeColor}
+            onChange={(e) => setStrokeColor(e.target.value)}
+            title="Stroke Color"
+            className="toolbar-color"
+          />
+
+          <input
+            type="color"
+            value={fillColor}
+            onChange={(e) => setFillColor(e.target.value)}
+            title="Fill Color"
+            className="toolbar-color"
+          />
+
+          <label className="toolbar-field" title="Stroke Width">
+            <span className="toolbar-field-label">Width</span>
+            <select
+              value={strokeWidth}
+              onChange={(e) => setStrokeWidth(Number(e.target.value))}
+              className="toolbar-select"
+            >
+              {SIZE_PRESETS.map((size) => (
+                <option key={size} value={size}>{size}px</option>
+              ))}
+            </select>
+          </label>
+        </>
+    );
+  };
 
   const handleDropOnCanvas = useCallback((e) => {
     e.preventDefault();
-    const toolType = e.dataTransfer.getData('application/x-codeipad-tool');
-    if (!toolType || toolType === 'draw' || toolType === 'erase' || toolType === 'select') return;
+    const toolType = e.dataTransfer.getData('application/x-codeipad-tool') || e.dataTransfer.getData('shape');
+
+    if (!toolType) {
+      setIsShapesPanelDragging(false);
+      return;
+    }
+
+    if (toolType === 'draw' || toolType === 'erase' || toolType === 'select') {
+      handleToolSelect(toolType);
+      updateStatus(`${toolType} tool selected`);
+      setIsShapesPanelDragging(false);
+      return;
+    }
 
     const point = getMousePoint(e);
-    if (!point) return;
+    if (!point) {
+      setIsShapesPanelDragging(false);
+      return;
+    }
 
     createShape(toolType, point);
     pushHistory(captureSnapshot());
-  }, [captureSnapshot, createShape, getMousePoint, pushHistory]);
+    setIsShapesPanelDragging(false);
+  }, [captureSnapshot, createShape, getMousePoint, handleToolSelect, pushHistory, updateStatus]);
+
+  const renderShapesPanel = () => {
+    const isShapesPanelExpanded = isShapesPanelPinned || isShapesPanelDragging || isShapesPanelHot;
+
+    return (
+      <>
+        <div
+          className="shapes-hover-zone"
+          aria-hidden="true"
+          onMouseEnter={() => setIsShapesPanelHot(true)}
+          onMouseLeave={() => {
+            if (!isShapesPanelPinned) {
+              setIsShapesPanelHot(false);
+            }
+          }}
+          title="Hover to open shapes panel"
+        />
+
+        <aside
+          className={`shapes-panel ${isShapesPanelPinned ? 'pinned' : ''} ${isShapesPanelDragging ? 'dragging' : ''} ${isShapesPanelExpanded ? 'expanded' : ''}`}
+          aria-label="Shapes panel"
+          onMouseEnter={() => setIsShapesPanelHot(true)}
+          onMouseLeave={() => {
+            if (!isShapesPanelPinned && !isShapesPanelDragging) {
+              setIsShapesPanelHot(false);
+            }
+          }}
+        >
+          <div className="shapes-content">
+            <div className="shapes-panel-head">
+              <span className="shapes-panel-title">Shapes</span>
+              <button
+                type="button"
+                className={`shapes-pin-btn ${isShapesPanelPinned ? 'active' : ''}`}
+                onClick={toggleShapesPanelPinned}
+                title={isShapesPanelPinned ? 'Unpin panel' : 'Pin panel'}
+              >
+                {isShapesPanelPinned ? 'Unpin' : 'Pin'}
+              </button>
+            </div>
+
+            {SHAPE_PANEL_GROUPS.map((group) => (
+              <section key={group.title} className="shapes-group">
+                <div className="shapes-group-title">{group.title}</div>
+                <div className="shapes-group-items">
+                  {group.items.map((toolType) => {
+                    const tool = TOOL_ITEMS.find((item) => item.type === toolType);
+                    if (!tool) return null;
+
+                    return (
+                      <button
+                        key={tool.type}
+                        type="button"
+                        className={`shape-item ${selectedTool === tool.type ? 'active' : ''}`}
+                        draggable
+                        onDragStart={(e) => handleShapesPanelDragStart(e, tool.type)}
+                        onDragEnd={handleShapesPanelDragEnd}
+                        onClick={() => handleToolSelect(tool.type)}
+                        title={tool.label}
+                      >
+                        <span className="shape-item-icon">{tool.icon}</span>
+                        <span className="shape-item-label">{tool.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+            ))}
+          </div>
+        </aside>
+
+        <div className={`shapes-panel-hint ${isShapesPanelExpanded ? 'hidden' : ''}`}>
+          Shapes panel on right
+        </div>
+      </>
+    );
+  };
 
   const handleDropOnEditor = useCallback((e) => {
     e.preventDefault();
@@ -1566,6 +1785,8 @@ function App() {
   return (
     <div className="app-shell" data-theme={theme}>
       <div className="editor-container">
+        {renderShapesPanel()}
+
         <MonacoPane
           language={language}
           theme={monacoTheme}
@@ -1573,6 +1794,7 @@ function App() {
           options={editorOptions}
           onDrop={handleDropOnEditor}
           onDragOver={(e) => e.preventDefault()}
+          onEditorDoubleClick={handleEditorDoubleClick}
           onEditorMount={(editor) => {
             monacoEditorRef.current = editor;
             setEditorReady(true);
@@ -1586,6 +1808,7 @@ function App() {
           ref={canvasContainerRef}
           onDrop={handleDropOnCanvas}
           onDragOver={(e) => e.preventDefault()}
+          onDoubleClick={handleCanvasDoubleClick}
           onContextMenu={handleCanvasContextMenu}
           onMouseDown={handleCanvasMouseDown}
           onMouseMove={handleCanvasMouseMove}
@@ -1595,7 +1818,7 @@ function App() {
             handleCanvasMouseUp();
           }}
         >
-          <canvas ref={canvasRef} className="canvas-element" style={{ pointerEvents: 'auto' }} />
+          <canvas ref={canvasRef} className="canvas-element" />
         </div>
       </div>
 
