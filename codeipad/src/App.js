@@ -589,6 +589,65 @@ const MonacoPane = React.memo(function MonacoPane({
 });
 
 function App() {
+  // ==================== STORAGE CONSTANTS & HELPERS ====================
+  const STORAGE_KEY = 'codeipad-session';
+  const STORAGE_VERSION = 1;
+
+  // Storage helper functions
+  const saveToStorage = useCallback((data) => {
+    try {
+      const payload = {
+        version: STORAGE_VERSION,
+        timestamp: Date.now(),
+        data
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+      setStatus('Saved locally');
+      // Clear status after 2 seconds
+      setTimeout(() => setStatus('Ready'), 2000);
+    } catch (error) {
+      console.error('Failed to save to localStorage:', error);
+      setStatus('Save failed');
+    }
+  }, []);
+
+  const loadFromStorage = useCallback(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (!stored) return null;
+
+      const parsed = JSON.parse(stored);
+      // Validate version
+      if (parsed.version !== STORAGE_VERSION) {
+        console.warn('Storage version mismatch, resetting');
+        return null;
+      }
+      return parsed.data;
+    } catch (error) {
+      console.error('Failed to load from localStorage:', error);
+      return null;
+    }
+  }, []);
+
+  const clearStorage = useCallback(() => {
+    try {
+      localStorage.removeItem(STORAGE_KEY);
+      setStatus('Storage cleared');
+    } catch (error) {
+      console.error('Failed to clear localStorage:', error);
+    }
+  }, []);
+
+  // Debounce helper
+  const debounce = useCallback((func, delay) => {
+    let timeoutId;
+    return (...args) => {
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(() => func(...args), delay);
+    };
+  }, []);
+
+  // ==================== STATE DECLARATIONS ====================
   const [language, setLanguage] = useState('plaintext');
   const [theme, setTheme] = useState('light');
   const [editorReady, setEditorReady] = useState(false);
@@ -611,12 +670,13 @@ function App() {
   const [interactionMode, setInteractionMode] = useState('code');
   const [shapes, setShapes] = useState([]);
   const [selectedShapeId, setSelectedShapeId] = useState(null);
-  const [hoverShapeId, setHoverShapeId] = useState(null);
+  const [, setHoverShapeId] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
   const [eraserPointer, setEraserPointer] = useState(null);
   const [currentPath, setCurrentPath] = useState([]);
   const [viewportTick, setViewportTick] = useState(0);
+  const [initialEditorCode, setInitialEditorCode] = useState(DEFAULT_CODE);
 
   const canvasRef = useRef(null);
   const canvasContainerRef = useRef(null);
@@ -632,12 +692,31 @@ function App() {
   const resizeRef = useRef(null);
   const rotateRef = useRef(null);
   const erasedDuringStrokeRef = useRef(false);
+  const debouncedSaveRef = useRef(null);
 
   const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
 
   useEffect(() => {
     shapesRef.current = shapes;
   }, [shapes]);
+
+  // Load persisted state on app initialization
+  useEffect(() => {
+    const stored = loadFromStorage();
+    if (stored) {
+      // Restore editor code
+      if (stored.code) setInitialEditorCode(stored.code);
+      // Restore UI settings
+      if (stored.language) setLanguage(stored.language);
+      if (stored.theme) setTheme(stored.theme);
+      if (stored.editorFontSize) setEditorFontSize(stored.editorFontSize);
+      if (stored.blockSize) setBlockSize(stored.blockSize);
+      if (stored.elementCount) setElementCount(stored.elementCount);
+      // Restore shapes
+      if (Array.isArray(stored.shapes)) setShapes(stored.shapes);
+      updateStatus('Session restored');
+    }
+  }, []); // Run only once on mount
 
   const updateStatus = useCallback((message) => {
     setStatus(message);
@@ -661,6 +740,52 @@ function App() {
   useEffect(() => {
     setCanvasPointerEvents(interactionMode === 'shape' ? 'auto' : 'none');
   }, [interactionMode, setCanvasPointerEvents]);
+
+  // Auto-save shapes (debounced)
+  useEffect(() => {
+    if (!debouncedSaveRef.current) {
+      debouncedSaveRef.current = debounce(() => {
+        const code = monacoEditorRef.current?.getValue?.() || DEFAULT_CODE;
+        const dataToSave = {
+          code,
+          shapes,
+          language,
+          theme,
+          editorFontSize,
+          blockSize,
+          elementCount
+        };
+        saveToStorage(dataToSave);
+      }, 400);
+    }
+    debouncedSaveRef.current();
+  }, [shapes, language, theme, editorFontSize, blockSize, elementCount, saveToStorage, debounce]);
+
+  // Auto-save editor code changes (with longer debounce to avoid excessive saves)
+  useEffect(() => {
+    if (!editorReady) return;
+
+    const handleEditorChange = () => {
+      if (!debouncedSaveRef.current) {
+        debouncedSaveRef.current = debounce(() => {
+          const code = monacoEditorRef.current?.getValue?.() || DEFAULT_CODE;
+          const dataToSave = {
+            code,
+            shapes,
+            language,
+            theme,
+            editorFontSize,
+            blockSize,
+            elementCount
+          };
+          saveToStorage(dataToSave);
+        }, 400);
+      }
+      debouncedSaveRef.current();
+    };
+
+    monacoEditorRef.current?.onDidChangeModelContent?.(handleEditorChange);
+  }, [editorReady, saveToStorage, debounce, shapes, language, theme, editorFontSize, blockSize, elementCount]);
 
   const passPointerThroughToEditor = useCallback((sourceEvent) => {
     const editor = monacoEditorRef.current;
@@ -1455,6 +1580,40 @@ function App() {
     updateStatus('Session exported');
   }, [captureSnapshot, updateStatus]);
 
+  const handleManualSave = useCallback(() => {
+    const code = monacoEditorRef.current?.getValue?.() || DEFAULT_CODE;
+    const dataToSave = {
+      code,
+      shapes,
+      language,
+      theme,
+      editorFontSize,
+      blockSize,
+      elementCount
+    };
+    saveToStorage(dataToSave);
+  }, [shapes, language, theme, editorFontSize, blockSize, elementCount, saveToStorage]);
+
+  const handleResetSession = useCallback(() => {
+    if (window.confirm('Clear all saved data and reset? This cannot be undone.')) {
+      clearStorage();
+      // Reset all state to defaults
+      setLanguage('plaintext');
+      setTheme('light');
+      setEditorFontSize(15);
+      setBlockSize(60);
+      setElementCount(5);
+      setShapes([]);
+      setInitialEditorCode(DEFAULT_CODE);
+      setSelectedShapeId(null);
+      setHoverShapeId(null);
+      setHistory({ items: [], index: -1 });
+      setInteractionMode('code');
+      monacoEditorRef.current?.setValue?.(DEFAULT_CODE);
+      updateStatus('Session reset to defaults');
+    }
+  }, [clearStorage, updateStatus]);
+
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === 'light' ? 'dark' : 'light'));
     updateStatus('Theme switched');
@@ -1790,7 +1949,7 @@ function App() {
         <MonacoPane
           language={language}
           theme={monacoTheme}
-          initialCode={DEFAULT_CODE}
+          initialCode={initialEditorCode}
           options={editorOptions}
           onDrop={handleDropOnEditor}
           onDragOver={(e) => e.preventDefault()}
@@ -1846,6 +2005,8 @@ function App() {
           </button>
           <button type="button" className="toolbar-icon-btn" onClick={clearCanvas} title="Clear Canvas">✕</button>
           <button type="button" className="toolbar-icon-btn" onClick={exportJSON} title="Export JSON">↓</button>
+          <button type="button" className="toolbar-icon-btn" onClick={handleManualSave} title="Save to Storage">💾</button>
+          <button type="button" className="toolbar-icon-btn" onClick={handleResetSession} title="Reset All Data">⟲</button>
           <button type="button" className="toolbar-icon-btn" onClick={toggleTheme} title="Toggle Theme">{theme === 'light' ? '🌙' : '☀'}</button>
         </div>
       </div>
