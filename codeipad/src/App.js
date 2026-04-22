@@ -700,6 +700,10 @@ function App() {
     shapesRef.current = shapes;
   }, [shapes]);
 
+  const updateStatus = useCallback((message) => {
+    setStatus(message);
+  }, []);
+
   // Load persisted state on app initialization
   useEffect(() => {
     const stored = loadFromStorage();
@@ -716,11 +720,7 @@ function App() {
       if (Array.isArray(stored.shapes)) setShapes(stored.shapes);
       updateStatus('Session restored');
     }
-  }, []); // Run only once on mount
-
-  const updateStatus = useCallback((message) => {
-    setStatus(message);
-  }, []);
+  }, [loadFromStorage, updateStatus]);
 
   const getMousePoint = useCallback((e) => {
     const rect = canvasContainerRef.current?.getBoundingClientRect();
