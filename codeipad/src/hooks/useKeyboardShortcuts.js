@@ -37,6 +37,14 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      // Always allow quick return to code mode while in canvas mode.
+      if (!meta && key === 'm' && mode === 'canvas') {
+        setMode('code');
+        focusEditor?.();
+        event.preventDefault();
+        return;
+      }
+
       if (!isEditableTarget && !meta) {
         if (key === 'v') {
           if (mode === 'canvas') {
@@ -59,19 +67,6 @@ export function useKeyboardShortcuts({
             activateTool?.('erase');
             event.preventDefault();
           }
-          return;
-        }
-
-        if (key === 'c') {
-          setMode('canvas');
-          event.preventDefault();
-          return;
-        }
-
-        if (key === 'm') {
-          setMode('code');
-          focusEditor?.();
-          event.preventDefault();
           return;
         }
 

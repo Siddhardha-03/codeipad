@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import EraserSizeSlider from './components/EraserSizeSlider';
+import DrawWidthSlider from './components/DrawWidthSlider';
 import { useSelection, isShapeInsideSelectionBox, getGroupBounds } from './hooks/useSelection';
 import { useClipboard } from './hooks/useClipboard';
 import { useHistory } from './hooks/useHistory';
@@ -49,10 +51,26 @@ const LANGUAGES = [
   { value: 'markdown', label: 'Markdown' }
 ];
 
-const SIZE_PRESETS = [1, 2, 3, 4, 5, 6, 8, 10, 12];
 const FONT_SIZE_PRESETS = [12, 14, 15, 16, 18, 20, 22, 24, 28, 32, 36, 48, 60, 72];
-const BLOCK_SIZE_PRESETS = [40, 50, 60, 70, 80, 100];
 const ELEMENT_COUNT_PRESETS = [1, 2, 3, 4, 5, 6, 7, 8];
+const MIN_ERASER_SIZE = 4;
+const MAX_ERASER_SIZE = 32;
+const MIN_DRAW_WIDTH = 1;
+const MAX_DRAW_WIDTH = 12;
+
+function getPenCursor() {
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+      <path d="M7 16.5l7.5-7.5 2.5 2.5-7.5 7.5L5 20l2-3.5Z" fill="#111827"/>
+      <path d="M14.5 6.5l3 3" stroke="#111827" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M4.5 19.5l3-1 1 1-1 3-3-3Z" fill="#ef4444" stroke="#111827" stroke-width="1"/>
+    </svg>
+  `;
+
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 2 22, crosshair`;
+}
+
+const PEN_CURSOR = getPenCursor();
 
 const SHAPE_PANEL_GROUPS = [
   {
@@ -992,7 +1010,7 @@ function App() {
     }
 
     if (selectedTool === 'draw' && !dragRef.current && !resizeRef.current && !rotateRef.current) {
-      layer.style.cursor = 'crosshair';
+      layer.style.cursor = PEN_CURSOR;
       return;
     }
 
@@ -1891,8 +1909,12 @@ function App() {
     setMobileToolsOpen(false);
   }, [setSelectedShapeId, updateStatus]);
 
-  const adjustEraseSize = useCallback((delta) => {
-    setEraseSize((current) => clamp(current + delta, 8, 96));
+  const handleEraseSizeChange = useCallback((nextSize) => {
+    setEraseSize(clamp(nextSize, MIN_ERASER_SIZE, MAX_ERASER_SIZE));
+  }, []);
+
+  const handleDrawWidthChange = useCallback((nextWidth) => {
+    setStrokeWidth(clamp(nextWidth, MIN_DRAW_WIDTH, MAX_DRAW_WIDTH));
   }, []);
 
   const applyEditorFontSize = useCallback((nextSize) => {
@@ -1931,28 +1953,6 @@ function App() {
               >
                 <span className="tool-btn-icon">{tool.icon}</span>
               </button>
-
-              {tool.type === 'erase' && (
-                <div className="eraser-size-inline" title="Eraser Size">
-                  <button
-                    type="button"
-                    className="eraser-size-step"
-                    onClick={() => adjustEraseSize(-2)}
-                    aria-label="Decrease eraser size"
-                  >
-                    −
-                  </button>
-                  <span className="eraser-size-value">{eraseSize}</span>
-                  <button
-                    type="button"
-                    className="eraser-size-step"
-                    onClick={() => adjustEraseSize(2)}
-                    aria-label="Increase eraser size"
-                  >
-                    +
-                  </button>
-                </div>
-              )}
             </React.Fragment>
           ))}
 
@@ -1980,19 +1980,6 @@ function App() {
             >
               {fontSizeOptions.map((size) => (
                 <option key={size} value={size}>{size}px</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="toolbar-field" title="Block Size">
-            <span className="toolbar-field-label">Block</span>
-            <select
-              value={blockSize}
-              onChange={(e) => setBlockSize(Number(e.target.value))}
-              className="toolbar-select"
-            >
-              {BLOCK_SIZE_PRESETS.map((size) => (
-                <option key={size} value={size}>B{size}</option>
               ))}
             </select>
           </label>
@@ -2028,18 +2015,6 @@ function App() {
             className="toolbar-color"
           />
 
-          <label className="toolbar-field" title="Stroke Width">
-            <span className="toolbar-field-label">Width</span>
-            <select
-              value={strokeWidth}
-              onChange={(e) => setStrokeWidth(Number(e.target.value))}
-              className="toolbar-select"
-            >
-              {SIZE_PRESETS.map((size) => (
-                <option key={size} value={size}>{size}px</option>
-              ))}
-            </select>
-          </label>
         </>
     );
   };
@@ -2177,6 +2152,24 @@ function App() {
       <div className="editor-container">
         {renderShapesPanel()}
 
+        {selectedTool === 'erase' && interactionMode === 'shape' && (
+          <EraserSizeSlider
+            value={eraseSize}
+            min={MIN_ERASER_SIZE}
+            max={MAX_ERASER_SIZE}
+            onChange={handleEraseSizeChange}
+          />
+        )}
+
+        {selectedTool === 'draw' && interactionMode === 'shape' && (
+          <DrawWidthSlider
+            value={strokeWidth}
+            min={MIN_DRAW_WIDTH}
+            max={MAX_DRAW_WIDTH}
+            onChange={handleDrawWidthChange}
+          />
+        )}
+
         <MonacoPane
           language={language}
           theme={monacoTheme}
@@ -2196,6 +2189,7 @@ function App() {
         <div
           className="canvas-layer"
           ref={canvasContainerRef}
+          data-tool={selectedTool}
           onDrop={handleDropOnCanvas}
           onDragOver={(e) => e.preventDefault()}
           onDoubleClick={handleCanvasDoubleClick}
@@ -2228,7 +2222,8 @@ function App() {
             onClick={enterCodeMode}
             title="Code Mode (M / Esc)"
           >
-            Code
+            <span className="mode-label-full">Code</span>
+            <span className="mode-label-short">M</span>
           </button>
           <button
             type="button"
@@ -2236,7 +2231,8 @@ function App() {
             onClick={enterCanvasMode}
             title="Canvas Mode (C)"
           >
-            Canvas
+            <span className="mode-label-full">Canvas</span>
+            <span className="mode-label-short">C</span>
           </button>
           <button type="button" className="toolbar-icon-btn" onClick={handleUndo} disabled={history.index <= 0} title="Undo">↶</button>
           <button type="button" className="toolbar-icon-btn" onClick={handleRedo} disabled={history.index >= history.items.length - 1} title="Redo">↷</button>
