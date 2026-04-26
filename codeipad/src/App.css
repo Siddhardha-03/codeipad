@@ -583,6 +583,22 @@ body,
   flex-shrink: 0;
 }
 
+.toolbar-icon-btn.mode-btn {
+  min-width: 62px;
+  width: auto;
+  padding: 0 10px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.toolbar-icon-btn.active {
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: #fff;
+  border-color: transparent;
+  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.35);
+}
+
 .toolbar-right,
 .toolbar-left {
   flex-shrink: 0;
@@ -614,6 +630,10 @@ body,
   background: rgba(60, 60, 60, 0.65);
   color: #e5e7eb;
   border-color: rgba(255, 255, 255, 0.1);
+}
+
+.app-shell[data-theme='dark'] .toolbar-icon-btn.active {
+  color: #fff;
 }
 
 .mobile-tools-panel {
@@ -739,6 +759,13 @@ body,
   .toolbar-icon-btn {
     width: 32px;
     height: 32px;
+  }
+
+  .toolbar-icon-btn.mode-btn {
+    min-width: 54px;
+    width: auto;
+    padding: 0 8px;
+    font-size: 0.68rem;
   }
 
   .mobile-tools-btn {

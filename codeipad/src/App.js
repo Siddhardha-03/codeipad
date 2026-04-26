@@ -1,5 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Editor from '@monaco-editor/react';
+import { useSelection, isShapeInsideSelectionBox, getGroupBounds } from './hooks/useSelection';
+import { useClipboard } from './hooks/useClipboard';
+import { useHistory } from './hooks/useHistory';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import './App.css';
 
 const DEFAULT_CODE = `function sum(a, b) {
@@ -460,8 +464,6 @@ function drawShape(ctx, shape, scrollOffset) {
 }
 
 function drawResizeHandles(ctx, shape, scrollOffset) {
-  if (shape.type === 'pen') return;
-
   const bounds = getShapeBounds(shape, scrollOffset);
   const handles = getHandlePositions(bounds);
 
@@ -669,7 +671,8 @@ function App() {
   const [selectedTool, setSelectedTool] = useState('select');
   const [interactionMode, setInteractionMode] = useState('code');
   const [shapes, setShapes] = useState([]);
-  const [selectedShapeId, setSelectedShapeId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [clipboard, setClipboard] = useState([]);
   const [, setHoverShapeId] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isErasing, setIsErasing] = useState(false);
@@ -693,6 +696,17 @@ function App() {
   const rotateRef = useRef(null);
   const erasedDuringStrokeRef = useRef(false);
   const debouncedSaveRef = useRef(null);
+
+  const setSelectedShapeId = useCallback((id) => {
+    setSelectedIds(id ? [id] : []);
+  }, []);
+
+  const mode = interactionMode === 'shape' ? 'canvas' : 'code';
+  const setMode = useCallback((nextMode) => {
+    setInteractionMode(nextMode === 'canvas' ? 'shape' : 'code');
+  }, []);
+
+  const selection = useSelection();
 
   const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
 
@@ -811,7 +825,7 @@ function App() {
     setSelectedShapeId(shapeId);
     setHoverShapeId(shapeId);
     updateStatus('Shape mode');
-  }, [updateStatus]);
+  }, [setSelectedShapeId, updateStatus]);
 
   const exitShapeMode = useCallback((sourceEvent) => {
     dragRef.current = null;
@@ -824,7 +838,23 @@ function App() {
       passPointerThroughToEditor(sourceEvent);
     }
     updateStatus('Code mode');
-  }, [passPointerThroughToEditor, updateStatus]);
+  }, [passPointerThroughToEditor, setSelectedShapeId, updateStatus]);
+
+  const enterCanvasMode = useCallback(() => {
+    setInteractionMode('shape');
+    updateStatus('Canvas mode');
+  }, [updateStatus]);
+
+  const enterCodeMode = useCallback(() => {
+    dragRef.current = null;
+    resizeRef.current = null;
+    rotateRef.current = null;
+    setInteractionMode('code');
+    setSelectedShapeId(null);
+    setHoverShapeId(null);
+    monacoEditorRef.current?.focus();
+    updateStatus('Code mode');
+  }, [setSelectedShapeId, updateStatus]);
 
   const handleCanvasDoubleClick = useCallback((e) => {
     const point = getMousePoint(e);
@@ -868,21 +898,6 @@ function App() {
     };
   }, [editorFontSize, elementCount, blockSize]);
 
-  const pushHistory = useCallback((snapshot) => {
-    if (historyLockRef.current) return;
-
-    setHistory((prev) => {
-      const scoped = prev.items.slice(0, prev.index + 1);
-      const last = scoped[scoped.length - 1];
-      if (last && JSON.stringify(last) === JSON.stringify(snapshot)) {
-        return prev;
-      }
-
-      const nextItems = [...scoped, snapshot].slice(-MAX_HISTORY);
-      return { items: nextItems, index: nextItems.length - 1 };
-    });
-  }, []);
-
   const applySnapshot = useCallback((snapshot) => {
     if (!snapshot) return;
 
@@ -907,6 +922,12 @@ function App() {
 
     updateStatus('State restored');
   }, [updateStatus]);
+
+  const historyApi = useHistory({ setHistory, applySnapshot, MAX_HISTORY });
+
+  const pushHistory = useCallback((snapshot) => {
+    historyApi.pushHistory(snapshot, historyLockRef);
+  }, [historyApi]);
 
   const createShape = useCallback((toolType, point) => {
     if (!point) return null;
@@ -1051,11 +1072,49 @@ function App() {
       drawShape(ctx, shape, scrollOffsetRef.current);
     });
 
-    if (interactionMode === 'shape' && selectedShapeId) {
-      const focusedShape = shapes.find((shape) => shape.id === selectedShapeId);
-      if (focusedShape) {
-        drawResizeHandles(ctx, focusedShape, scrollOffsetRef.current);
+    if (interactionMode === 'shape' && selectedIds.length) {
+      if (selectedIds.length === 1) {
+        const focusedShape = shapes.find((shape) => shape.id === selectedIds[0]);
+        if (focusedShape) {
+          drawResizeHandles(ctx, focusedShape, scrollOffsetRef.current);
+        }
+      } else {
+        const selectedShapes = shapes.filter((shape) => selectedIds.includes(shape.id));
+        const groupBounds = getGroupBounds(selectedShapes, scrollOffsetRef.current);
+        if (groupBounds) {
+          ctx.save();
+          ctx.strokeStyle = '#2563eb';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 4]);
+          ctx.strokeRect(groupBounds.left - 4, groupBounds.top - 4, groupBounds.width + 8, groupBounds.height + 8);
+          ctx.setLineDash([]);
+
+          const handles = getHandlePositions(groupBounds);
+          Object.values(handles).forEach((handle) => {
+            ctx.fillStyle = '#ffffff';
+            ctx.strokeStyle = '#2563eb';
+            ctx.fillRect(handle.x - HANDLE_SIZE / 2, handle.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+            ctx.strokeRect(handle.x - HANDLE_SIZE / 2, handle.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+          });
+
+          ctx.restore();
+        }
       }
+    }
+
+    if (selection.marqueeBox) {
+      const left = Math.min(selection.marqueeBox.x1, selection.marqueeBox.x2) - scrollOffsetRef.current.left;
+      const top = Math.min(selection.marqueeBox.y1, selection.marqueeBox.y2) - scrollOffsetRef.current.top;
+      const width = Math.abs(selection.marqueeBox.x2 - selection.marqueeBox.x1);
+      const height = Math.abs(selection.marqueeBox.y2 - selection.marqueeBox.y1);
+
+      ctx.save();
+      ctx.fillStyle = 'rgba(37, 99, 235, 0.14)';
+      ctx.strokeStyle = 'rgba(37, 99, 235, 0.9)';
+      ctx.setLineDash([6, 4]);
+      ctx.fillRect(left, top, width, height);
+      ctx.strokeRect(left, top, width, height);
+      ctx.restore();
     }
 
     if (isDrawing && currentPath.length > 1) {
@@ -1085,7 +1144,7 @@ function App() {
       ctx.stroke();
       ctx.restore();
     }
-  }, [currentPath, eraseSize, eraserPointer, interactionMode, isDrawing, selectedShapeId, selectedTool, shapes, strokeColor, strokeWidth, viewportTick]);
+  }, [currentPath, eraseSize, eraserPointer, interactionMode, isDrawing, selectedIds, selectedTool, selection.marqueeBox, shapes, strokeColor, strokeWidth, viewportTick]);
 
   const applyResize = useCallback((shape, bounds, handle, point) => {
     const startLeft = bounds.left;
@@ -1158,8 +1217,26 @@ function App() {
       };
     }
 
-    if (shape.type === 'text' || shape.type === 'pen') {
+    if (shape.type === 'text') {
       return shape;
+    }
+
+    if (shape.type === 'pen') {
+      const originalBounds = getShapeBounds(shape, scrollOffsetRef.current);
+      const sourceWidth = Math.max(1, originalBounds.width);
+      const sourceHeight = Math.max(1, originalBounds.height);
+      const scaleX = width / sourceWidth;
+      const scaleY = height / sourceHeight;
+
+      return {
+        ...shape,
+        x: centerX + scrollOffsetRef.current.left,
+        y: centerY + scrollOffsetRef.current.top,
+        points: (shape.points || []).map((pointItem) => ({
+          x: left + (pointItem.x - scrollOffsetRef.current.left - originalBounds.left) * scaleX + scrollOffsetRef.current.left,
+          y: top + (pointItem.y - scrollOffsetRef.current.top - originalBounds.top) * scaleY + scrollOffsetRef.current.top
+        }))
+      };
     }
 
     return {
@@ -1238,7 +1315,7 @@ function App() {
       resizeRef.current = null;
       rotateRef.current = null;
       setHoverShapeId(null);
-      setSelectedShapeId(null);
+      setSelectedIds([]);
       setCurrentPath([point]);
       setIsDrawing(true);
       const layer = canvasContainerRef.current;
@@ -1252,7 +1329,7 @@ function App() {
       resizeRef.current = null;
       rotateRef.current = null;
       setHoverShapeId(null);
-      setSelectedShapeId(null);
+      setSelectedIds([]);
       setEraserPointer(point);
       erasedDuringStrokeRef.current = false;
       setIsErasing(true);
@@ -1267,9 +1344,32 @@ function App() {
 
     const orderedShapes = [...shapesRef.current].reverse();
 
+    if (selectedIds.length > 1) {
+      const selectedShapes = shapesRef.current.filter((shape) => selectedIds.includes(shape.id));
+      const groupBounds = getGroupBounds(selectedShapes, scrollOffsetRef.current);
+      if (groupBounds) {
+        const groupHandle = getHandleAtPoint(viewportPoint, groupBounds, 'rectangle');
+        if (groupHandle) {
+          resizeRef.current = {
+            group: true,
+            selectedIds: [...selectedIds],
+            handle: groupHandle,
+            bounds: groupBounds,
+            originals: shapesRef.current.reduce((acc, shape) => {
+              if (selectedIds.includes(shape.id)) {
+                acc[shape.id] = JSON.parse(JSON.stringify(shape));
+              }
+              return acc;
+            }, {})
+          };
+          updateCursor(point);
+          return;
+        }
+      }
+    }
+
     for (let i = 0; i < orderedShapes.length; i += 1) {
       const shape = orderedShapes[i];
-      if (shape.type === 'pen') continue;
 
       const bounds = getShapeBounds(shape, scrollOffsetRef.current);
       const handle = getHandleAtPoint(viewportPoint, bounds, shape.type);
@@ -1287,7 +1387,7 @@ function App() {
           };
         }
         setHoverShapeId(shape.id);
-        setSelectedShapeId(shape.id);
+        setSelectedIds([shape.id]);
         updateCursor(point);
         return;
       }
@@ -1298,23 +1398,56 @@ function App() {
     );
 
     if (selectedShape) {
+      if (e.shiftKey) {
+        setSelectedIds((current) => current.includes(selectedShape.id)
+          ? current.filter((id) => id !== selectedShape.id)
+          : [...current, selectedShape.id]);
+        setHoverShapeId(selectedShape.id);
+        updateCursor(point);
+        return;
+      }
+
+      const activeIds = selectedIds.includes(selectedShape.id) && selectedIds.length
+        ? [...selectedIds]
+        : [selectedShape.id];
+
+      const originals = shapesRef.current.reduce((acc, shape) => {
+        if (activeIds.includes(shape.id)) {
+          acc[shape.id] = {
+            x: shape.x,
+            y: shape.y,
+            points: shape.type === 'pen' && Array.isArray(shape.points)
+              ? shape.points.map((p) => ({ ...p }))
+              : undefined
+          };
+        }
+        return acc;
+      }, {});
+
       dragRef.current = {
-        shapeId: selectedShape.id,
+        shapeIds: activeIds,
+        leadShapeId: selectedShape.id,
         startX: point.x,
         startY: point.y,
-        shapeX: selectedShape.x,
-        shapeY: selectedShape.y
+        originals
       };
       setHoverShapeId(selectedShape.id);
-      setSelectedShapeId(selectedShape.id);
+      setSelectedIds(activeIds);
       updateCursor(point);
       return;
     }
 
-    // In shape mode, single-clicking empty space just clears hover.
+    selection.startMarquee(point);
+    selection.marqueeRef.current.append = e.shiftKey;
+
+    if (!e.shiftKey) {
+      setSelectedIds([]);
+    }
+
+    // In shape mode, single-clicking empty space clears hover and starts marquee.
     setHoverShapeId(null);
     updateCursor(point);
-  }, [eraseAtPoint, getMousePoint, interactionMode, passPointerThroughToEditor, selectedTool, updateCursor]);
+  }, [eraseAtPoint, getMousePoint, interactionMode, passPointerThroughToEditor, selectedIds, selectedTool, selection, updateCursor]);
 
   const handleCanvasMouseMove = useCallback((e) => {
     const point = getMousePoint(e);
@@ -1339,11 +1472,62 @@ function App() {
       return;
     }
 
+    if (selection.marqueeRef.current.active) {
+      selection.updateMarquee(point);
+      return;
+    }
+
     if (resizeRef.current) {
       const viewportPoint = {
         x: point.x - scrollOffsetRef.current.left,
         y: point.y - scrollOffsetRef.current.top
       };
+
+      if (resizeRef.current.group) {
+        const { selectedIds: activeIds, handle, bounds, originals } = resizeRef.current;
+        const minSize = 20;
+        let left = bounds.left;
+        let right = bounds.left + bounds.width;
+        let top = bounds.top;
+        let bottom = bounds.top + bounds.height;
+
+        if (handle.includes('w')) left = Math.min(viewportPoint.x, right - minSize);
+        if (handle.includes('e')) right = Math.max(viewportPoint.x, left + minSize);
+        if (handle.includes('n')) top = Math.min(viewportPoint.y, bottom - minSize);
+        if (handle.includes('s')) bottom = Math.max(viewportPoint.y, top + minSize);
+
+        const newBounds = { left, top, width: Math.max(minSize, right - left), height: Math.max(minSize, bottom - top) };
+        const scaleX = newBounds.width / Math.max(1, bounds.width);
+        const scaleY = newBounds.height / Math.max(1, bounds.height);
+
+        const nextShapes = shapesRef.current.map((shape) => {
+          if (!activeIds.includes(shape.id)) return shape;
+          const original = originals[shape.id] || shape;
+          const ox = (original.x - scrollOffsetRef.current.left - bounds.left) * scaleX;
+          const oy = (original.y - scrollOffsetRef.current.top - bounds.top) * scaleY;
+          const nx = newBounds.left + ox + scrollOffsetRef.current.left;
+          const ny = newBounds.top + oy + scrollOffsetRef.current.top;
+
+          const updated = { ...shape, x: nx, y: ny };
+
+          if (typeof original.width === 'number') updated.width = Math.max(20, original.width * scaleX);
+          if (typeof original.height === 'number') updated.height = Math.max(20, original.height * scaleY);
+          if (typeof original.radius === 'number') updated.radius = Math.max(12, original.radius * Math.min(scaleX, scaleY));
+          if (shape.type === 'pen' && Array.isArray(original.points)) {
+            updated.points = original.points.map((p) => ({
+              x: newBounds.left + (p.x - scrollOffsetRef.current.left - bounds.left) * scaleX + scrollOffsetRef.current.left,
+              y: newBounds.top + (p.y - scrollOffsetRef.current.top - bounds.top) * scaleY + scrollOffsetRef.current.top
+            }));
+          }
+
+          return updated;
+        });
+
+        shapesRef.current = nextShapes;
+        setShapes(nextShapes);
+        updateCursor(point);
+        return;
+      }
 
       const { shapeId, handle, bounds } = resizeRef.current;
       const nextShapes = shapesRef.current.map((shape) => {
@@ -1383,18 +1567,33 @@ function App() {
       const dy = point.y - dragRef.current.startY;
 
       const nextShapes = shapesRef.current.map((shape) => {
-        if (shape.id !== dragRef.current.shapeId) return shape;
+        if (!dragRef.current.shapeIds.includes(shape.id)) return shape;
+        const original = dragRef.current.originals[shape.id];
+        if (!original) return shape;
+
+        if (shape.type === 'pen') {
+          return {
+            ...shape,
+            x: original.x + dx,
+            y: original.y + dy,
+            points: (original.points || []).map((penPoint) => ({
+              x: penPoint.x + dx,
+              y: penPoint.y + dy
+            }))
+          };
+        }
+
         return {
           ...shape,
-          x: dragRef.current.shapeX + dx,
-          y: dragRef.current.shapeY + dy
+          x: original.x + dx,
+          y: original.y + dy
         };
       });
 
       shapesRef.current = nextShapes;
       setShapes(nextShapes);
-      setHoverShapeId(dragRef.current.shapeId);
-      setSelectedShapeId(dragRef.current.shapeId);
+      setHoverShapeId(dragRef.current.leadShapeId);
+      setSelectedIds([...dragRef.current.shapeIds]);
       updateCursor(point);
       return;
     }
@@ -1405,10 +1604,27 @@ function App() {
     setHoverShapeId(hovered?.id ?? null);
 
     updateCursor(point);
-  }, [applyResize, eraseAtPoint, getMousePoint, interactionMode, isDrawing, isErasing, selectedTool, updateCursor]);
+  }, [applyResize, eraseAtPoint, getMousePoint, interactionMode, isDrawing, isErasing, selectedTool, selection, setSelectedShapeId, updateCursor]);
 
   const handleCanvasMouseUp = useCallback(() => {
     if (interactionMode !== 'shape') {
+      return;
+    }
+
+    if (selection.marqueeRef.current.active) {
+      const appendSelection = Boolean(selection.marqueeRef.current.append);
+      const finalBox = selection.endMarquee();
+      if (finalBox) {
+        const matchedIds = shapesRef.current
+          .filter((shape) => isShapeInsideSelectionBox(shape, finalBox, scrollOffsetRef.current))
+          .map((shape) => shape.id);
+
+        if (appendSelection) {
+          setSelectedIds((current) => Array.from(new Set([...current, ...matchedIds])));
+        } else {
+          setSelectedIds(matchedIds);
+        }
+      }
       return;
     }
 
@@ -1476,7 +1692,7 @@ function App() {
         layer.style.cursor = 'default';
       }
     }
-  }, [captureSnapshot, currentPath, fillColor, interactionMode, isDrawing, isErasing, pushHistory, selectedTool, strokeColor, strokeWidth, updateStatus]);
+  }, [captureSnapshot, currentPath, fillColor, interactionMode, isDrawing, isErasing, pushHistory, selectedTool, selection, strokeColor, strokeWidth, updateStatus]);
 
   const handleCanvasContextMenu = useCallback((e) => {
     e.preventDefault();
@@ -1493,54 +1709,70 @@ function App() {
     const nextShapes = shapesRef.current.filter((shape) => shape.id !== hitShape.id);
     shapesRef.current = nextShapes;
     setShapes(nextShapes);
-    if (selectedShapeId === hitShape.id) {
-      setSelectedShapeId(null);
+    if (selectedIds.includes(hitShape.id)) {
+      setSelectedIds((current) => current.filter((id) => id !== hitShape.id));
     }
     setHoverShapeId(null);
     updateStatus(`${hitShape.type} deleted`);
     pushHistory(captureSnapshot());
-  }, [captureSnapshot, getMousePoint, pushHistory, selectedShapeId, updateStatus]);
+  }, [captureSnapshot, getMousePoint, pushHistory, selectedIds, updateStatus]);
 
-  const handleUndo = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.index <= 0) return prev;
-      const nextIndex = prev.index - 1;
-      applySnapshot(prev.items[nextIndex]);
-      return { ...prev, index: nextIndex };
-    });
-  }, [applySnapshot]);
+  const handleUndo = historyApi.undo;
+  const handleRedo = historyApi.redo;
 
-  const handleRedo = useCallback(() => {
-    setHistory((prev) => {
-      if (prev.index >= prev.items.length - 1) return prev;
-      const nextIndex = prev.index + 1;
-      applySnapshot(prev.items[nextIndex]);
-      return { ...prev, index: nextIndex };
-    });
-  }, [applySnapshot]);
+  const activateToolFromShortcut = useCallback((toolType) => {
+    setSelectedTool(toolType);
 
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') {
-        exitShapeMode();
-        e.preventDefault();
-        return;
-      }
+    if (toolType === 'draw' || toolType === 'erase') {
+      setMode('canvas');
+      setSelectedIds([]);
+      setHoverShapeId(null);
+      updateStatus(toolType === 'draw' ? 'Draw mode' : 'Erase mode');
+    }
 
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-        handleUndo();
-        e.preventDefault();
-      }
+    if (toolType === 'select') {
+      setMode('canvas');
+      setSelectedIds([]);
+      setHoverShapeId(null);
+      updateStatus('Select mode');
+    }
 
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-        handleRedo();
-        e.preventDefault();
-      }
-    };
+    setIsDrawing(false);
+    setCurrentPath([]);
+    setIsErasing(false);
+    setEraserPointer(null);
+    dragRef.current = null;
+    resizeRef.current = null;
+    rotateRef.current = null;
+    setMobileToolsOpen(false);
+  }, [setMode, setSelectedIds, updateStatus]);
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [exitShapeMode, handleRedo, handleUndo]);
+  const clipboardApi = useClipboard({
+    clipboard,
+    setClipboard,
+    shapesRef,
+    setShapes,
+    selectedIds,
+    setSelectedIds,
+    pushHistory,
+    captureSnapshot,
+    updateStatus
+  });
+
+  useKeyboardShortcuts({
+    mode,
+    setMode,
+    setSelectedIds,
+    shapesRef,
+    historyUndo: handleUndo,
+    historyRedo: handleRedo,
+    copySelection: clipboardApi.copySelection,
+    pasteClipboard: clipboardApi.pasteClipboard,
+    cutSelection: clipboardApi.cutSelection,
+    deleteSelection: clipboardApi.deleteSelection,
+    activateTool: activateToolFromShortcut,
+    focusEditor: () => monacoEditorRef.current?.focus()
+  });
 
   useEffect(() => {
     latestStateRef.current = { language, theme };
@@ -1572,7 +1804,7 @@ function App() {
     setInteractionMode('code');
     pushHistory(captureSnapshot());
     updateStatus('Canvas cleared');
-  }, [captureSnapshot, pushHistory, updateStatus]);
+  }, [captureSnapshot, pushHistory, setSelectedShapeId, updateStatus]);
 
   const exportJSON = useCallback(() => {
     const payload = JSON.stringify(captureSnapshot(), null, 2);
@@ -1612,7 +1844,7 @@ function App() {
       monacoEditorRef.current?.setValue?.(DEFAULT_CODE);
       updateStatus('Session reset to defaults');
     }
-  }, [clearStorage, updateStatus]);
+  }, [clearStorage, setSelectedShapeId, updateStatus]);
 
   const toggleTheme = useCallback(() => {
     setTheme((current) => (current === 'light' ? 'dark' : 'light'));
@@ -1644,11 +1876,10 @@ function App() {
     }
 
     if (toolType === 'select') {
-      setInteractionMode('code');
+      setInteractionMode('shape');
       setSelectedShapeId(null);
       setHoverShapeId(null);
-      monacoEditorRef.current?.focus();
-      updateStatus('Code mode');
+      updateStatus('Select mode');
     }
     setIsDrawing(false);
     setCurrentPath([]);
@@ -1658,7 +1889,7 @@ function App() {
     resizeRef.current = null;
     rotateRef.current = null;
     setMobileToolsOpen(false);
-  }, [updateStatus]);
+  }, [setSelectedShapeId, updateStatus]);
 
   const adjustEraseSize = useCallback((delta) => {
     setEraseSize((current) => clamp(current + delta, 8, 96));
@@ -1991,6 +2222,22 @@ function App() {
         </div>
 
         <div className="toolbar-right">
+          <button
+            type="button"
+            className={`toolbar-icon-btn mode-btn ${interactionMode === 'code' ? 'active' : ''}`}
+            onClick={enterCodeMode}
+            title="Code Mode (M / Esc)"
+          >
+            Code
+          </button>
+          <button
+            type="button"
+            className={`toolbar-icon-btn mode-btn ${interactionMode === 'shape' ? 'active' : ''}`}
+            onClick={enterCanvasMode}
+            title="Canvas Mode (C)"
+          >
+            Canvas
+          </button>
           <button type="button" className="toolbar-icon-btn" onClick={handleUndo} disabled={history.index <= 0} title="Undo">↶</button>
           <button type="button" className="toolbar-icon-btn" onClick={handleRedo} disabled={history.index >= history.items.length - 1} title="Redo">↷</button>
           <button
