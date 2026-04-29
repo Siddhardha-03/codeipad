@@ -7,7 +7,7 @@ import { useClipboard } from './hooks/useClipboard';
 import { useHistory } from './hooks/useHistory';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { draw as drawArrowShape, getBounds as getArrowBounds, isHit as isArrowHit } from './shapes/arrow';
-import { draw as drawCurvedArrowShape, getBounds as getCurvedArrowBounds, isHit as isCurvedArrowHit } from './shapes/curvedArrow';
+import { draw as drawCurvedArrowShape, getBounds as getCurvedArrowBounds, isHit as isCurvedArrowHit, getHandlePoints as getCurvedArrowHandlePoints, updateHandle as updateCurvedArrowHandle } from './shapes/curvedArrow';
 import { draw as drawFlexArrowShape, getBounds as getFlexArrowBounds, isHit as isFlexArrowHit, getHandlePoints as getFlexArrowHandlePoints, updateHandle as updateFlexArrowHandle } from './shapes/flexArrow';
 import './App.css';
 
@@ -19,20 +19,79 @@ console.log(sum(2, 3));`;
 
 const MAX_HISTORY = 40;
 const HANDLE_SIZE = 8;
-const ROTATABLE_TYPES = new Set(['line', 'arrow', 'double-arrow', 'curved-arrow']);
+const ROTATABLE_TYPES = new Set(['line', 'arrow', 'double-arrow']);
+const FLIPPABLE_TYPES = new Set([]);
 const FLEX_ARROW_HANDLE_SIZE = 10;
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function getArrayCellFontSize(cellWidth, cellHeight, text = '') {
+  const baseSize = clamp(Math.round(Math.min(cellWidth * 0.34, cellHeight * 0.46)), 10, 28);
+  if (!text) return baseSize;
+  const lengthFactor = Math.max(1, Math.min(1.8, 8 / String(text).length));
+  return clamp(Math.round(baseSize * lengthFactor), 10, 28);
+}
+
+function getArrayLayout(shape) {
+  const type = shape.type === 'sll' || shape.type === 'dll' ? shape.type : 'array';
+  const cellsPerNode = type === 'dll' ? 3 : type === 'sll' ? 2 : 1;
+  const gap = type === 'array' ? 10 : 14;
+  const count = Math.max(1, shape.count || 1);
+  const cellHeight = Math.max(24, shape.cellHeight || shape.blockSize || 60);
+  const cellWidth = Math.max(24, shape.cellWidth || shape.blockSize || 60);
+  const nodeWidth = cellWidth * cellsPerNode;
+  const totalWidth = count * nodeWidth + (count - 1) * gap;
+  const headerBand = clamp(Math.round(cellHeight * 0.23), 14, 20);
+
+  return {
+    type,
+    count,
+    gap,
+    cellsPerNode,
+    cellWidth,
+    cellHeight,
+    nodeWidth,
+    totalWidth,
+    headerBand,
+    segmentWidth: nodeWidth / cellsPerNode,
+    contentHeight: Math.max(12, cellHeight - headerBand - 6)
+  };
+}
+
+function getArrayCellGeometry(shape, index) {
+  const layout = getArrayLayout(shape);
+  const nodeIndex = Math.floor(index / layout.cellsPerNode);
+  const segmentIndex = index % layout.cellsPerNode;
+  const left = (shape.x - layout.totalWidth / 2) + nodeIndex * (layout.nodeWidth + layout.gap);
+  const top = shape.y - layout.cellHeight / 2;
+  const segmentLeft = left + segmentIndex * layout.segmentWidth;
+
+  return {
+    ...layout,
+    nodeIndex,
+    segmentIndex,
+    left,
+    top,
+    segmentLeft,
+    segmentCenterX: segmentLeft + layout.segmentWidth / 2,
+    valueTop: top + layout.headerBand,
+    valueCenterY: top + layout.headerBand + layout.contentHeight / 2
+  };
+}
 
 const TOOL_ITEMS = [
   { type: 'select', label: 'Select / Move', short: 'Sel', icon: '⌖' },
-  { type: 'draw', label: 'Freehand Draw', short: 'Draw', icon: '✎' },
+  { type: 'draw', label: 'Freehand Draw', short: 'Draw', icon: '🖌' },
   { type: 'erase', label: 'Erase Freehand', short: 'Erase', icon: '⌫' },
   { type: 'rectangle', label: 'Rectangle', short: 'Rect', icon: '▭' },
   { type: 'circle', label: 'Circle', short: 'Circle', icon: '◯' },
   { type: 'line', label: 'Straight Line', short: 'Line', icon: '／' },
   { type: 'arrow', label: 'Arrow', short: 'Arrow', icon: '→' },
+  { type: 'curved-arrow', label: 'Curved Arrow', short: 'Curve', icon: '⌒' },
   { type: 'double-arrow', label: 'Double Arrow', short: 'D-Arr', icon: '↔' },
-  { type: 'curved-arrow', label: 'Curved Arrow', short: 'Curve', icon: '⤴' },
-  { type: 'flex-arrow', label: 'Flex Arrow', short: 'Flex', icon: '↪' },
+  
   { type: 'text', label: 'Text Note', short: 'Text', icon: 'T' },
   { type: 'array', label: 'Array', short: 'Array', icon: 'Arr' },
   { type: 'sll', label: 'Singly Linked List', short: 'SLL', icon: 'SLL' },
@@ -66,9 +125,9 @@ const MAX_DRAW_WIDTH = 12;
 function getPenCursor() {
   const svg = `
     <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
-      <path d="M7 16.5l7.5-7.5 2.5 2.5-7.5 7.5L5 20l2-3.5Z" fill="#111827"/>
-      <path d="M14.5 6.5l3 3" stroke="#111827" stroke-width="1.5" stroke-linecap="round"/>
-      <path d="M4.5 19.5l3-1 1 1-1 3-3-3Z" fill="#ef4444" stroke="#111827" stroke-width="1"/>
+      <path d="M2 21c0 0 4-1 6-3s3-4 3-4 1-1 2-1 3 1 4 2 3 3 3 3-2 1-4 1-8 2-14 2z" fill="#111827"/>
+      <path d="M20.5 3.5c.6.6.6 1.6 0 2.2l-6 6-3-3 6-6c.6-.6 1.6-.6 2.2 0l.8.8z" fill="#111827"/>
+      <path d="M14 5l3 3" stroke="#ffffff" stroke-width="0.5" stroke-linecap="round"/>
     </svg>
   `;
 
@@ -84,7 +143,7 @@ const SHAPE_PANEL_GROUPS = [
   },
   {
     title: 'Arrows',
-    items: ['arrow', 'double-arrow', 'curved-arrow']
+    items: ['arrow', 'curved-arrow', 'double-arrow']
   },
   {
     title: 'Data Structures',
@@ -230,8 +289,15 @@ function getRotateHandlePosition(bounds) {
   };
 }
 
+function getFlipHandlePosition(bounds) {
+  return {
+    x: bounds.left + bounds.width - HANDLE_SIZE - 2,
+    y: bounds.top + HANDLE_SIZE + 4
+  };
+}
+
 function getHandleAtPoint(point, bounds, shapeType) {
-  if (shapeType === 'flex-arrow') {
+  if (shapeType === 'flex-arrow' || shapeType === 'curved-arrow') {
     return null;
   }
 
@@ -240,6 +306,14 @@ function getHandleAtPoint(point, bounds, shapeType) {
     const rotateThreshold = HANDLE_SIZE + 4;
     if (Math.abs(point.x - rotateHandle.x) <= rotateThreshold && Math.abs(point.y - rotateHandle.y) <= rotateThreshold) {
       return 'rotate';
+    }
+  }
+
+  if (FLIPPABLE_TYPES.has(shapeType)) {
+    const flipHandle = getFlipHandlePosition(bounds);
+    const flipThreshold = HANDLE_SIZE + 4;
+    if (Math.abs(point.x - flipHandle.x) <= flipThreshold && Math.abs(point.y - flipHandle.y) <= flipThreshold) {
+      return 'flip';
     }
   }
 
@@ -259,9 +333,9 @@ function getHandleAtPoint(point, bounds, shapeType) {
 }
 
 function getFlexArrowHandleAtPoint(point, shape, scrollOffset) {
-  if (shape.type !== 'flex-arrow') return null;
+  if (shape.type !== 'flex-arrow' && shape.type !== 'curved-arrow') return null;
 
-  const handles = getFlexArrowHandlePoints(shape);
+  const handles = shape.type === 'flex-arrow' ? getFlexArrowHandlePoints(shape) : getCurvedArrowHandlePoints(shape);
   const threshold = FLEX_ARROW_HANDLE_SIZE + 3;
 
   for (const [handleName, handlePoint] of Object.entries(handles)) {
@@ -317,39 +391,58 @@ function drawPen(ctx, points, scrollOffset) {
 }
 
 function drawArrayLike(ctx, shape, x, y, withNextArrow, withPrevArrow) {
-  const cellWidth = shape.cellWidth || shape.blockSize;
-  const cellHeight = shape.cellHeight || shape.blockSize;
-  const gap = withNextArrow ? 18 : 2;
-  const count = shape.count;
-  const startX = x - shape.width / 2;
-  const top = y - shape.height / 2;
-  const cellsPerNode = withPrevArrow ? 3 : withNextArrow ? 2 : 1;
-  const nodeWidth = cellWidth * cellsPerNode;
+  const layout = getArrayLayout(shape);
+  const count = layout.count;
+  const startX = x - layout.totalWidth / 2;
+  const top = y - layout.cellHeight / 2;
+  const borderColor = shape.strokeColor;
+  const baseFill = 'rgba(255, 255, 255, 0.9)';
+  const headerFill = 'rgba(148, 163, 184, 0.14)';
 
-  ctx.fillStyle = hexToRgba(shape.fillColor, 0.08);
+  ctx.fillStyle = baseFill;
   ctx.strokeStyle = shape.strokeColor;
   ctx.lineWidth = shape.strokeWidth;
 
   for (let i = 0; i < count; i += 1) {
-    const cellLeft = startX + i * (nodeWidth + gap);
-    ctx.strokeRect(cellLeft, top, nodeWidth, cellHeight);
-    ctx.fillRect(cellLeft, top, nodeWidth, cellHeight);
+    const cellLeft = startX + i * (layout.nodeWidth + layout.gap);
+    ctx.fillStyle = baseFill;
+    ctx.strokeRect(cellLeft, top, layout.nodeWidth, layout.cellHeight);
+    ctx.fillRect(cellLeft, top, layout.nodeWidth, layout.cellHeight);
 
-    if (cellsPerNode > 1) {
-      const segment = nodeWidth / cellsPerNode;
-      for (let segmentIndex = 1; segmentIndex < cellsPerNode; segmentIndex += 1) {
-        const dividerX = cellLeft + segment * segmentIndex;
+    ctx.fillStyle = headerFill;
+    ctx.fillRect(cellLeft, top, layout.nodeWidth, layout.headerBand);
+    ctx.fillStyle = baseFill;
+
+    if (layout.cellsPerNode > 1) {
+      for (let segmentIndex = 1; segmentIndex < layout.cellsPerNode; segmentIndex += 1) {
+        const dividerX = cellLeft + layout.segmentWidth * segmentIndex;
         ctx.beginPath();
         ctx.moveTo(dividerX, top);
-        ctx.lineTo(dividerX, top + cellHeight);
+        ctx.lineTo(dividerX, top + layout.cellHeight);
         ctx.stroke();
       }
     }
 
+    ctx.fillStyle = borderColor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+
+    const labelFontSize = clamp(Math.round(layout.headerBand * 0.6), 9, 14);
+    ctx.font = `700 ${labelFontSize}px Inter, Arial, sans-serif`;
+    const baseIndex = i * layout.cellsPerNode;
+
+    for (let segmentIndex = 0; segmentIndex < layout.cellsPerNode; segmentIndex += 1) {
+      const label = String(baseIndex + segmentIndex);
+      const cx = cellLeft + layout.segmentWidth * (segmentIndex + 0.5);
+      const headerCenterY = top + layout.headerBand / 2 + 0.5;
+      ctx.fillText(label, cx, headerCenterY);
+
+    }
+
     if (i < count - 1 && withNextArrow) {
-      const midY = top + cellHeight / 2;
-      const fromX = cellLeft + nodeWidth;
-      const toX = cellLeft + nodeWidth + gap;
+      const midY = top + layout.cellHeight / 2;
+      const fromX = cellLeft + layout.nodeWidth;
+      const toX = cellLeft + layout.nodeWidth + layout.gap;
 
       ctx.beginPath();
       ctx.moveTo(fromX + 2, midY);
@@ -526,11 +619,21 @@ function drawResizeHandles(ctx, shape, scrollOffset) {
     ctx.stroke();
   }
 
+  if (FLIPPABLE_TYPES.has(shape.type)) {
+    const flipHandle = getFlipHandlePosition(bounds);
+    ctx.fillStyle = '#fbbf24';
+    ctx.strokeStyle = '#d97706';
+    ctx.beginPath();
+    ctx.arc(flipHandle.x, flipHandle.y, HANDLE_SIZE / 2 + 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+
   ctx.restore();
 }
 
 function drawFlexArrowHandles(ctx, shape, scrollOffset) {
-  const handles = getFlexArrowHandlePoints(shape);
+  const handles = shape.type === 'flex-arrow' ? getFlexArrowHandlePoints(shape) : getCurvedArrowHandlePoints(shape);
 
   ctx.save();
   ctx.fillStyle = '#ffffff';
@@ -547,10 +650,6 @@ function drawFlexArrowHandles(ctx, shape, scrollOffset) {
   });
 
   ctx.restore();
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function distancePointToSegment(point, start, end) {
@@ -721,6 +820,7 @@ function App() {
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [eraseSize, setEraseSize] = useState(20);
   const [editorFontSize, setEditorFontSize] = useState(15);
+  const [editingCell, setEditingCell] = useState(null);
   const [elementCount, setElementCount] = useState(5);
   const [blockSize, setBlockSize] = useState(60);
   const [status, setStatus] = useState('Ready');
@@ -921,6 +1021,33 @@ function App() {
     const hitShape = findTopShapeAtPoint(point);
 
     if (hitShape) {
+      // If array-like, allow editing a cell on double-click
+      if (hitShape.type === 'array' || hitShape.type === 'sll' || hitShape.type === 'dll') {
+        const layout = getArrayLayout(hitShape);
+        for (let i = 0; i < layout.count; i += 1) {
+          const cellGeometry = getArrayCellGeometry(hitShape, i * layout.cellsPerNode);
+          const cellRect = { left: cellGeometry.left, top: cellGeometry.top, width: layout.nodeWidth, height: layout.cellHeight };
+          if (point.x >= cellRect.left && point.x <= cellRect.left + cellRect.width && point.y >= cellRect.top && point.y <= cellRect.top + cellRect.height) {
+            const relativeX = point.x - cellRect.left;
+            const segmentIndex = Math.min(layout.cellsPerNode - 1, Math.floor(relativeX / layout.segmentWidth));
+            const cellIndex = i * layout.cellsPerNode + segmentIndex;
+            const valueGeometry = getArrayCellGeometry(hitShape, cellIndex);
+            const value = (hitShape.cells && hitShape.cells[cellIndex]) || '';
+            setEditingCell({
+              shapeId: hitShape.id,
+              cellIndex,
+              value,
+              left: valueGeometry.segmentLeft - scrollOffsetRef.current.left + 3,
+              top: valueGeometry.valueTop - scrollOffsetRef.current.top + 2,
+              width: Math.max(24, layout.segmentWidth) - 6,
+              height: Math.max(20, layout.contentHeight) - 4,
+              fontSize: getArrayCellFontSize(layout.segmentWidth, layout.contentHeight, value)
+            });
+            return;
+          }
+        }
+      }
+
       enterShapeMode(hitShape.id);
       return;
     }
@@ -944,6 +1071,24 @@ function App() {
 
     exitShapeMode(e);
   }, [enterShapeMode, exitShapeMode, findTopShapeAtPoint, getMousePoint]);
+
+  const saveEditingCell = useCallback((nextValue) => {
+    if (!editingCell) return;
+    const { shapeId, cellIndex } = editingCell;
+    const nextShapes = shapesRef.current.map((s) => {
+      if (s.id !== shapeId) return s;
+      const cells = Array.isArray(s.cells) ? [...s.cells] : [];
+      cells[cellIndex] = nextValue;
+      return { ...s, cells };
+    });
+    shapesRef.current = nextShapes;
+    setShapes(nextShapes);
+    setEditingCell(null);
+  }, [editingCell]);
+
+  const cancelEditingCell = useCallback(() => {
+    setEditingCell(null);
+  }, []);
 
   const captureSnapshot = useCallback(() => {
     return {
@@ -1010,26 +1155,20 @@ function App() {
       shape.width = 160;
     } else if (toolType === 'arrow' || toolType === 'double-arrow' || toolType === 'curved-arrow') {
       shape.width = 120;
-    } else if (toolType === 'flex-arrow') {
-      shape.width = 140;
-      shape.height = 60;
-      shape.points = [
-        { x: point.x, y: point.y },
-        { x: point.x + 36, y: point.y - 36 },
-        { x: point.x + 96, y: point.y + 36 },
-        { x: point.x + 140, y: point.y }
-      ];
     } else if (toolType === 'text') {
       shape.text = 'Text';
     } else if (toolType === 'array' || toolType === 'sll' || toolType === 'dll') {
-      const gap = toolType === 'array' ? 2 : 18;
-      const cellsPerNode = toolType === 'dll' ? 3 : toolType === 'sll' ? 2 : 1;
+      const layoutType = toolType === 'sll' || toolType === 'dll' ? toolType : 'array';
+      const cellsPerNode = layoutType === 'dll' ? 3 : layoutType === 'sll' ? 2 : 1;
+      const gap = layoutType === 'array' ? 10 : 14;
       shape.count = elementCount;
       shape.blockSize = blockSize;
       shape.cellWidth = blockSize;
       shape.cellHeight = blockSize;
       shape.width = elementCount * (shape.cellWidth * cellsPerNode) + (elementCount - 1) * gap;
       shape.height = shape.cellHeight;
+      // initialize cell contents
+      shape.cells = Array(shape.count * cellsPerNode).fill('');
     } else if (toolType === 'tree') {
       shape.count = Math.max(3, elementCount);
       shape.blockSize = blockSize;
@@ -1225,7 +1364,7 @@ function App() {
       ctx.stroke();
       ctx.restore();
     }
-  }, [currentPath, eraseSize, eraserPointer, interactionMode, isDrawing, selectedIds, selectedTool, selection.marqueeBox, shapes, strokeColor, strokeWidth, viewportTick]);
+  }, [currentPath, eraseSize, eraserPointer, interactionMode, isDrawing, selectedIds, selectedTool, selection.marqueeBox, shapes, strokeColor, strokeWidth, viewportTick, editorFontSize]);
 
   const applyResize = useCallback((shape, bounds, handle, point) => {
     const startLeft = bounds.left;
@@ -1272,11 +1411,11 @@ function App() {
     if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll') {
       const count = Math.max(1, shape.count || 1);
       const cellsPerNode = shape.type === 'dll' ? 3 : shape.type === 'sll' ? 2 : 1;
-      const gap = shape.type === 'array' ? 2 : 18;
+      const gap = shape.type === 'array' ? 10 : 14;
       const usableWidth = Math.max(24, width - (count - 1) * gap);
       const nodeWidth = usableWidth / count;
-      const cellWidth = Math.max(16, nodeWidth / cellsPerNode);
-      const cellHeight = Math.max(16, height);
+      const cellWidth = Math.max(18, nodeWidth / cellsPerNode);
+      const cellHeight = Math.max(24, height);
       const finalWidth = count * (cellWidth * cellsPerNode) + (count - 1) * gap;
 
       return {
@@ -1285,7 +1424,7 @@ function App() {
         cellHeight,
         width: finalWidth,
         height: cellHeight,
-        blockSize: Math.max(16, Math.round(Math.min(cellWidth, cellHeight)))
+        blockSize: Math.max(18, Math.round(Math.min(cellWidth, cellHeight)))
       };
     }
 
@@ -1502,6 +1641,17 @@ function App() {
           rotateRef.current = {
             shapeId: shape.id
           };
+        } else if (handle === 'flip') {
+          // Toggle flip immediately on flip handle click
+          const nextShapes = shapesRef.current.map((s) => {
+            if (s.id !== shape.id) return s;
+            return { ...s, flipped: !Boolean(s.flipped) };
+          });
+          shapesRef.current = nextShapes;
+          setShapes(nextShapes);
+          setHoverShapeId(shape.id);
+          setSelectedIds([shape.id]);
+          updateStatus(`Shape flipped`);
         } else {
           resizeRef.current = {
             shapeId: shape.id,
@@ -1570,7 +1720,7 @@ function App() {
     // In shape mode, single-clicking empty space clears hover and starts marquee.
     setHoverShapeId(null);
     updateCursor(point);
-  }, [eraseAtPoint, getMousePoint, interactionMode, passPointerThroughToEditor, selectedIds, selectedTool, selection, updateCursor]);
+  }, [eraseAtPoint, getMousePoint, interactionMode, passPointerThroughToEditor, selectedIds, selectedTool, selection, updateCursor, updateStatus]);
 
   const handleCanvasMouseMove = useCallback((e) => {
     const point = getMousePoint(e);
@@ -1606,20 +1756,22 @@ function App() {
         y: point.y - scrollOffsetRef.current.top
       };
 
-      if (resizeRef.current.type === 'flex-arrow-handle') {
-        const { shapeId, handle } = resizeRef.current;
-        const nextShapes = shapesRef.current.map((shape) => {
-          if (shape.id !== shapeId) return shape;
-          return updateFlexArrowHandle(shape, handle, point);
-        });
+        if (resizeRef.current.type === 'flex-arrow-handle') {
+          const { shapeId, handle } = resizeRef.current;
+          const nextShapes = shapesRef.current.map((shape) => {
+            if (shape.id !== shapeId) return shape;
+            if (shape.type === 'flex-arrow') return updateFlexArrowHandle(shape, handle, point);
+            if (shape.type === 'curved-arrow') return updateCurvedArrowHandle(shape, handle, point);
+            return shape;
+          });
 
-        shapesRef.current = nextShapes;
-        setShapes(nextShapes);
-        setHoverShapeId(shapeId);
-        setSelectedShapeId(shapeId);
-        updateCursor(point);
-        return;
-      }
+          shapesRef.current = nextShapes;
+          setShapes(nextShapes);
+          setHoverShapeId(shapeId);
+          setSelectedShapeId(shapeId);
+          updateCursor(point);
+          return;
+        }
 
       if (resizeRef.current.group) {
         const { selectedIds: activeIds, handle, bounds, originals } = resizeRef.current;
@@ -2279,6 +2431,41 @@ function App() {
     scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 }
   }), [editorFontSize]);
 
+  const renderArrayCellValues = () => {
+    const overlays = [];
+
+    shapes.forEach((shape) => {
+      if (shape.type !== 'array' && shape.type !== 'sll' && shape.type !== 'dll') return;
+
+      const layout = getArrayLayout(shape);
+      const values = Array.isArray(shape.cells) ? shape.cells : [];
+
+      for (let index = 0; index < values.length; index += 1) {
+        const value = values[index];
+        if (value === '' || value == null) continue;
+
+        const geometry = getArrayCellGeometry(shape, index);
+        overlays.push(
+          <div
+            key={`${shape.id}-${index}`}
+            className="array-cell-value"
+            style={{
+              left: geometry.segmentLeft - scrollOffsetRef.current.left + 2,
+              top: geometry.valueTop - scrollOffsetRef.current.top + 1,
+              width: Math.max(24, layout.segmentWidth) - 4,
+              height: Math.max(18, layout.contentHeight) - 2,
+              fontSize: `${getArrayCellFontSize(layout.segmentWidth, layout.contentHeight, value)}px`
+            }}
+          >
+            {String(value)}
+          </div>
+        );
+      }
+    });
+
+    return overlays;
+  };
+
   return (
     <div className="app-shell" data-theme={theme}>
       <div className="editor-container">
@@ -2335,6 +2522,39 @@ function App() {
           }}
         >
           <canvas ref={canvasRef} className="canvas-element" />
+          {renderArrayCellValues()}
+          {editingCell && (
+            <input
+              className="cell-editor-input"
+              autoFocus
+              value={editingCell.value}
+              onChange={(ev) => setEditingCell((s) => s ? { ...s, value: ev.target.value } : s)}
+              onBlur={(ev) => saveEditingCell(ev.currentTarget.value)}
+              onKeyDown={(ev) => {
+                if (ev.key === 'Enter') {
+                  saveEditingCell(ev.currentTarget.value);
+                } else if (ev.key === 'Escape') {
+                  cancelEditingCell();
+                }
+              }}
+              style={{
+                position: 'absolute',
+                zIndex: 60,
+                left: editingCell.left,
+                top: editingCell.top,
+                width: editingCell.width,
+                height: editingCell.height,
+                fontSize: `${editingCell.fontSize || 14}px`,
+                lineHeight: 'normal',
+                textAlign: 'center',
+                backgroundColor: 'rgba(255, 255, 255, 0.98)',
+                color: '#0f172a',
+                WebkitTextFillColor: '#0f172a',
+                opacity: 1,
+                pointerEvents: 'auto'
+              }}
+            />
+          )}
         </div>
       </div>
 

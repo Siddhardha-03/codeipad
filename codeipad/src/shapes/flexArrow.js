@@ -9,6 +9,33 @@ function getPoints(shape) {
   return points.length >= 4 ? points : fallback;
 }
 
+function getShapeCenter(points) {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return {
+    x: (Math.min(...xs) + Math.max(...xs)) / 2,
+    y: (Math.min(...ys) + Math.max(...ys)) / 2
+  };
+}
+
+function rotatePoint(point, center, angle) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const dx = point.x - center.x;
+  const dy = point.y - center.y;
+  return {
+    x: center.x + dx * cos - dy * sin,
+    y: center.y + dx * sin + dy * cos
+  };
+}
+
+function flipPoint(point, center, flipX = true) {
+  return {
+    x: flipX ? 2 * center.x - point.x : point.x,
+    y: flipX ? point.y : 2 * center.y - point.y
+  };
+}
+
 function drawArrowHead(ctx, tip, angle, strokeColor, fillColor, strokeWidth) {
   const headLength = Math.max(10, strokeWidth * 3.2);
   const headSpread = headLength * 0.55;
@@ -31,7 +58,30 @@ function drawArrowHead(ctx, tip, angle, strokeColor, fillColor, strokeWidth) {
 }
 
 export function draw(ctx, shape) {
-  const [p0, p1, p2, p3] = getPoints(shape);
+  let [p0, p1, p2, p3] = getPoints(shape);
+  const angle = shape.angle || 0;
+  const flipped = Boolean(shape.flipped);
+
+  // Apply transformations
+  if (angle !== 0 || flipped) {
+    const center = getShapeCenter([p0, p1, p2, p3]);
+    if (flipped) {
+      p0 = flipPoint(p0, center, true);
+      p1 = flipPoint(p1, center, true);
+      p2 = flipPoint(p2, center, true);
+      p3 = flipPoint(p3, center, true);
+      // Swap control points to maintain curve direction
+      [p1, p2] = [p2, p1];
+    }
+    if (angle !== 0) {
+      const center = getShapeCenter([p0, p1, p2, p3]);
+      p0 = rotatePoint(p0, center, angle);
+      p1 = rotatePoint(p1, center, angle);
+      p2 = rotatePoint(p2, center, angle);
+      p3 = rotatePoint(p3, center, angle);
+    }
+  }
+
   const strokeColor = shape.strokeColor || '#000000';
   const fillColor = shape.fillColor && shape.fillColor !== 'transparent'
     ? shape.fillColor
