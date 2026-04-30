@@ -11,11 +11,10 @@ import { draw as drawCurvedArrowShape, getBounds as getCurvedArrowBounds, isHit 
 import { draw as drawFlexArrowShape, getBounds as getFlexArrowBounds, isHit as isFlexArrowHit, getHandlePoints as getFlexArrowHandlePoints, updateHandle as updateFlexArrowHandle } from './shapes/flexArrow';
 import './App.css';
 
-const DEFAULT_CODE = `function sum(a, b) {
-  return a + b;
-}
-
-console.log(sum(2, 3));`;
+const DEFAULT_CODE = `// Welcome to Codeipad!
+// This editor supports JavaScript, TypeScript, Python, C++, Java, JSON, HTML, CSS, Markdown and more!
+// Drag shapes from the right panel, then click and drag the blue handles to resize or rotate them.
+// Happy coding! 🚀`;
 
 const MAX_HISTORY = 40;
 const HANDLE_SIZE = 8;
