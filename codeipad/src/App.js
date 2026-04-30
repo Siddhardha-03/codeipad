@@ -121,6 +121,10 @@ const MIN_ERASER_SIZE = 4;
 const MAX_ERASER_SIZE = 32;
 const MIN_DRAW_WIDTH = 1;
 const MAX_DRAW_WIDTH = 12;
+const THEME_DEFAULT_COLORS = {
+  light: '#000000',
+  dark: '#2563eb'
+};
 
 function getPenCursor() {
   const svg = `
@@ -333,9 +337,26 @@ function getHandleAtPoint(point, bounds, shapeType) {
 }
 
 function getFlexArrowHandleAtPoint(point, shape, scrollOffset) {
-  if (shape.type !== 'flex-arrow' && shape.type !== 'curved-arrow') return null;
+  if (shape.type !== 'flex-arrow') return null;
 
-  const handles = shape.type === 'flex-arrow' ? getFlexArrowHandlePoints(shape) : getCurvedArrowHandlePoints(shape);
+  const handles = getFlexArrowHandlePoints(shape);
+  const threshold = FLEX_ARROW_HANDLE_SIZE + 3;
+
+  for (const [handleName, handlePoint] of Object.entries(handles)) {
+    const localX = handlePoint.x - scrollOffset.left;
+    const localY = handlePoint.y - scrollOffset.top;
+    if (Math.abs(point.x - localX) <= threshold && Math.abs(point.y - localY) <= threshold) {
+      return handleName;
+    }
+  }
+
+  return null;
+}
+
+function getCurvedArrowHandleAtPoint(point, shape, scrollOffset) {
+  if (shape.type !== 'curved-arrow') return null;
+
+  const handles = getCurvedArrowHandlePoints(shape);
   const threshold = FLEX_ARROW_HANDLE_SIZE + 3;
 
   for (const [handleName, handlePoint] of Object.entries(handles)) {
@@ -353,7 +374,33 @@ function getResizeCursor(handle) {
   if (handle === 'rotate') return 'grab';
   if (handle === 'nw' || handle === 'se') return 'nwse-resize';
   if (handle === 'ne' || handle === 'sw') return 'nesw-resize';
+  if (handle === 'n' || handle === 's') return 'ns-resize';
+  if (handle === 'e' || handle === 'w') return 'ew-resize';
   return 'move';
+}
+
+function getArrowHandleCursor(shapeType, handle) {
+  if (shapeType === 'curved-arrow') {
+    if (handle === 'p1' || handle === 'p2') return 'ew-resize';
+    // midpoint and endpoints use grab-like cursor
+    if (handle === 'pmid') return 'grab';
+    return 'grab';
+  }
+  if (shapeType === 'flex-arrow') {
+    return handle === 'center' ? 'move' : 'grab';
+  }
+  return 'move';
+}
+
+function isHandleTargetSelected(shapeId, selectedIds) {
+  return selectedIds.length === 1 && selectedIds[0] === shapeId;
+}
+
+function isPointInsideBounds(point, bounds) {
+  return point.x >= bounds.left &&
+    point.x <= bounds.left + bounds.width &&
+    point.y >= bounds.top &&
+    point.y <= bounds.top + bounds.height;
 }
 
 function isPointInShape(point, shape, scrollOffset) {
@@ -633,7 +680,9 @@ function drawResizeHandles(ctx, shape, scrollOffset) {
 }
 
 function drawFlexArrowHandles(ctx, shape, scrollOffset) {
-  const handles = shape.type === 'flex-arrow' ? getFlexArrowHandlePoints(shape) : getCurvedArrowHandlePoints(shape);
+  if (shape.type !== 'flex-arrow') return;
+
+  const handles = getFlexArrowHandlePoints(shape);
 
   ctx.save();
   ctx.fillStyle = '#ffffff';
@@ -647,6 +696,49 @@ function drawFlexArrowHandles(ctx, shape, scrollOffset) {
     ctx.arc(x, y, FLEX_ARROW_HANDLE_SIZE / 2, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+  });
+
+  ctx.restore();
+}
+
+function drawCurvedArrowHandles(ctx, shape, scrollOffset) {
+  if (shape.type !== 'curved-arrow') return;
+
+  const handles = getCurvedArrowHandlePoints(shape);
+  const orderedNames = ['p0', 'p1', 'pmid', 'p2', 'p3'];
+
+  ctx.save();
+  ctx.fillStyle = '#ffffff';
+  ctx.strokeStyle = '#2563eb';
+  ctx.lineWidth = 2;
+
+  orderedNames.forEach((name) => {
+    const handle = handles[name];
+    if (!handle) return;
+    const x = handle.x - scrollOffset.left;
+    const y = handle.y - scrollOffset.top;
+    ctx.beginPath();
+    // midpoint handle slightly larger and distinct
+    if (name === 'pmid') {
+      ctx.fillStyle = '#eef2ff';
+      ctx.arc(x, y, FLEX_ARROW_HANDLE_SIZE * 0.65, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+    } else if (name === 'p1' || name === 'p2') {
+      // emphasize control handles so they are always visible
+      ctx.fillStyle = '#fff7ed';
+      ctx.strokeStyle = '#ea580c';
+      ctx.arc(x, y, FLEX_ARROW_HANDLE_SIZE * 0.62, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#2563eb';
+    } else {
+      ctx.arc(x, y, FLEX_ARROW_HANDLE_SIZE / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   });
 
   ctx.restore();
@@ -815,8 +907,8 @@ function App() {
   const [isShapesPanelDragging, setIsShapesPanelDragging] = useState(false);
   const [isShapesPanelHot, setIsShapesPanelHot] = useState(false);
 
-  const [strokeColor, setStrokeColor] = useState('#2563eb');
-  const [fillColor, setFillColor] = useState('#2563eb');
+  const [strokeColor, setStrokeColor] = useState(THEME_DEFAULT_COLORS.light);
+  const [fillColor, setFillColor] = useState(THEME_DEFAULT_COLORS.light);
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [eraseSize, setEraseSize] = useState(20);
   const [editorFontSize, setEditorFontSize] = useState(15);
@@ -867,6 +959,12 @@ function App() {
   const selection = useSelection();
 
   const monacoTheme = theme === 'dark' ? 'vs-dark' : 'vs';
+
+  useEffect(() => {
+    const defaultColor = THEME_DEFAULT_COLORS[theme] || THEME_DEFAULT_COLORS.light;
+    setStrokeColor(defaultColor);
+    setFillColor(defaultColor);
+  }, [theme]);
 
   useEffect(() => {
     shapesRef.current = shapes;
@@ -1153,8 +1251,10 @@ function App() {
       shape.radius = 45;
     } else if (toolType === 'line') {
       shape.width = 160;
-    } else if (toolType === 'arrow' || toolType === 'double-arrow' || toolType === 'curved-arrow') {
+    } else if (toolType === 'arrow' || toolType === 'double-arrow') {
       shape.width = 120;
+    } else if (toolType === 'curved-arrow') {
+      shape.width = 60;
     } else if (toolType === 'text') {
       shape.text = 'Text';
     } else if (toolType === 'array' || toolType === 'sll' || toolType === 'dll') {
@@ -1203,7 +1303,12 @@ function App() {
     }
 
     if (resizeRef.current) {
-      layer.style.cursor = getResizeCursor(resizeRef.current.handle);
+      if (resizeRef.current.type === 'flex-arrow-handle' || resizeRef.current.type === 'curved-arrow-handle') {
+        const activeShape = shapesRef.current.find((shape) => shape.id === resizeRef.current.shapeId);
+        layer.style.cursor = getArrowHandleCursor(activeShape?.type, resizeRef.current.handle);
+      } else {
+        layer.style.cursor = getResizeCursor(resizeRef.current.handle);
+      }
       return;
     }
 
@@ -1222,21 +1327,59 @@ function App() {
       y: point.y - scrollOffsetRef.current.top
     };
 
-    const hitShape = [...shapesRef.current].reverse().find((shape) => {
-      if (!isPointInShape(point, shape, scrollOffsetRef.current)) return false;
-      return true;
-    });
-
-    if (hitShape && hitShape.type !== 'pen') {
-      const bounds = getShapeBounds(hitShape, scrollOffsetRef.current);
-      if (hitShape.type === 'flex-arrow') {
-        const handle = getFlexArrowHandleAtPoint(viewportPoint, hitShape, scrollOffsetRef.current);
+    if (selectedIds.length === 1) {
+      const selectedShape = shapesRef.current.find((shape) => shape.id === selectedIds[0]);
+      if (selectedShape?.type === 'flex-arrow') {
+        const handle = getFlexArrowHandleAtPoint(viewportPoint, selectedShape, scrollOffsetRef.current);
         if (handle) {
-          layer.style.cursor = 'grab';
+          layer.style.cursor = getArrowHandleCursor(selectedShape.type, handle);
+          return;
+        }
+      } else if (selectedShape?.type === 'curved-arrow') {
+        const handle = getCurvedArrowHandleAtPoint(viewportPoint, selectedShape, scrollOffsetRef.current);
+        if (handle) {
+          layer.style.cursor = getArrowHandleCursor(selectedShape.type, handle);
+          return;
+        }
+
+        const selectedBounds = getShapeBounds(selectedShape, scrollOffsetRef.current);
+        if (isPointInsideBounds(viewportPoint, selectedBounds)) {
+          layer.style.cursor = 'move';
           return;
         }
       }
-      const handle = getHandleAtPoint(viewportPoint, bounds, hitShape.type);
+    }
+
+    const hitShape = [...shapesRef.current].reverse().find((shape) =>
+      isPointInShape(point, shape, scrollOffsetRef.current)
+    );
+
+    if (hitShape && hitShape.type !== 'pen') {
+      const bounds = getShapeBounds(hitShape, scrollOffsetRef.current);
+      if (hitShape.type === 'flex-arrow' && isHandleTargetSelected(hitShape.id, selectedIds)) {
+        const handle = getFlexArrowHandleAtPoint(viewportPoint, hitShape, scrollOffsetRef.current);
+        if (handle) {
+          layer.style.cursor = getArrowHandleCursor(hitShape.type, handle);
+          return;
+        }
+      }
+      if (hitShape.type === 'curved-arrow' && isHandleTargetSelected(hitShape.id, selectedIds)) {
+        const handle = getCurvedArrowHandleAtPoint(viewportPoint, hitShape, scrollOffsetRef.current);
+        if (handle) {
+          layer.style.cursor = getArrowHandleCursor(hitShape.type, handle);
+          return;
+        }
+      }
+      if (hitShape.type === 'curved-arrow' && isHandleTargetSelected(hitShape.id, selectedIds)) {
+        const bounds = getShapeBounds(hitShape, scrollOffsetRef.current);
+        if (isPointInsideBounds(viewportPoint, bounds)) {
+          layer.style.cursor = 'move';
+          return;
+        }
+      }
+      const handle = isHandleTargetSelected(hitShape.id, selectedIds)
+        ? getHandleAtPoint(viewportPoint, bounds, hitShape.type)
+        : null;
       if (handle) {
         layer.style.cursor = getResizeCursor(handle);
         return;
@@ -1244,7 +1387,7 @@ function App() {
     }
 
     layer.style.cursor = hitShape ? 'move' : 'text';
-  }, [interactionMode, selectedTool]);
+  }, [interactionMode, selectedIds, selectedTool]);
 
   const eraseAtPoint = useCallback((point) => {
     const radius = Math.max(4, eraseSize / 2);
@@ -1294,6 +1437,8 @@ function App() {
         if (focusedShape) {
           if (focusedShape.type === 'flex-arrow') {
             drawFlexArrowHandles(ctx, focusedShape, scrollOffsetRef.current);
+          } else if (focusedShape.type === 'curved-arrow') {
+            drawCurvedArrowHandles(ctx, focusedShape, scrollOffsetRef.current);
           } else {
             drawResizeHandles(ctx, focusedShape, scrollOffsetRef.current);
           }
@@ -1617,9 +1762,10 @@ function App() {
 
     for (let i = 0; i < orderedShapes.length; i += 1) {
       const shape = orderedShapes[i];
+      const handleEligible = isHandleTargetSelected(shape.id, selectedIds);
 
       const bounds = getShapeBounds(shape, scrollOffsetRef.current);
-      if (shape.type === 'flex-arrow') {
+      if (shape.type === 'flex-arrow' && handleEligible) {
         const flexHandle = getFlexArrowHandleAtPoint(viewportPoint, shape, scrollOffsetRef.current);
         if (flexHandle) {
           resizeRef.current = {
@@ -1634,7 +1780,22 @@ function App() {
           return;
         }
       }
-      const handle = getHandleAtPoint(viewportPoint, bounds, shape.type);
+      if (shape.type === 'curved-arrow' && handleEligible) {
+        const ch = getCurvedArrowHandleAtPoint(viewportPoint, shape, scrollOffsetRef.current);
+        if (ch) {
+          resizeRef.current = {
+            shapeId: shape.id,
+            handle: ch,
+            bounds,
+            type: 'curved-arrow-handle'
+          };
+          setHoverShapeId(shape.id);
+          setSelectedIds([shape.id]);
+          updateCursor(point);
+          return;
+        }
+      }
+      const handle = handleEligible ? getHandleAtPoint(viewportPoint, bounds, shape.type) : null;
 
       if (handle) {
         if (handle === 'rotate') {
@@ -1666,6 +1827,36 @@ function App() {
       }
     }
 
+    if (selectedIds.length === 1) {
+      const selectedShape = orderedShapes.find((shape) => shape.id === selectedIds[0]);
+      if (selectedShape?.type === 'curved-arrow') {
+        const selectedBounds = getShapeBounds(selectedShape, scrollOffsetRef.current);
+        if (isPointInsideBounds(viewportPoint, selectedBounds)) {
+          const originals = shapesRef.current.reduce((acc, shape) => {
+            if (shape.id === selectedShape.id) {
+              acc[shape.id] = {
+                x: shape.x,
+                y: shape.y,
+                points: Array.isArray(shape.points) ? shape.points.map((p) => ({ ...p })) : undefined
+              };
+            }
+            return acc;
+          }, {});
+
+          dragRef.current = {
+            shapeIds: [selectedShape.id],
+            leadShapeId: selectedShape.id,
+            startX: point.x,
+            startY: point.y,
+            originals
+          };
+          setHoverShapeId(selectedShape.id);
+          updateCursor(point);
+          return;
+        }
+      }
+    }
+
     const selectedShape = orderedShapes.find((shape) =>
       isPointInShape(point, shape, scrollOffsetRef.current)
     );
@@ -1689,7 +1880,7 @@ function App() {
           acc[shape.id] = {
             x: shape.x,
             y: shape.y,
-            points: (shape.type === 'pen' || shape.type === 'flex-arrow') && Array.isArray(shape.points)
+            points: (shape.type === 'pen' || shape.type === 'flex-arrow' || shape.type === 'curved-arrow') && Array.isArray(shape.points)
               ? shape.points.map((p) => ({ ...p }))
               : undefined
           };
@@ -1756,7 +1947,7 @@ function App() {
         y: point.y - scrollOffsetRef.current.top
       };
 
-        if (resizeRef.current.type === 'flex-arrow-handle') {
+        if (resizeRef.current.type === 'flex-arrow-handle' || resizeRef.current.type === 'curved-arrow-handle') {
           const { shapeId, handle } = resizeRef.current;
           const nextShapes = shapesRef.current.map((shape) => {
             if (shape.id !== shapeId) return shape;
@@ -1873,7 +2064,7 @@ function App() {
           };
         }
 
-        if (shape.type === 'flex-arrow' && Array.isArray(original.points)) {
+        if ((shape.type === 'flex-arrow' || shape.type === 'curved-arrow') && Array.isArray(original.points)) {
           return {
             ...shape,
             x: original.x + dx,
