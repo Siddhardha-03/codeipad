@@ -593,17 +593,17 @@ function drawShape(ctx, shape, scrollOffset) {
   }
 
   if (shape.type === 'arrow' || shape.type === 'double-arrow') {
-    drawArrowShape(ctx, shape);
+    drawArrowShape(ctx, shape, scrollOffset);
     return;
   }
 
   if (shape.type === 'curved-arrow') {
-    drawCurvedArrowShape(ctx, shape);
+    drawCurvedArrowShape(ctx, shape, scrollOffset);
     return;
   }
 
   if (shape.type === 'flex-arrow') {
-    drawFlexArrowShape(ctx, shape);
+    drawFlexArrowShape(ctx, shape, scrollOffset);
     return;
   }
 
@@ -969,11 +969,38 @@ function App() {
     shapesRef.current = shapes;
   }, [shapes]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    window.__codeipadDebug = {
+      getState: () => ({
+        interactionMode,
+        selectedTool,
+        selectedIds: [...selectedIds],
+        shapes: shapes.map((shape) => ({ ...shape })),
+        scrollOffset: { ...scrollOffsetRef.current },
+        status
+      })
+    };
+  }, [interactionMode, selectedTool, selectedIds, shapes, status]);
+
+  useEffect(() => {
+    // Update status bar based on selection
+    if (selectedIds.length === 0) {
+      setStatus('Select tool active - click shapes to select');
+    } else if (selectedIds.length === 1) {
+      const shape = shapes.find((s) => s.id === selectedIds[0]);
+      if (shape) {
+        setStatus(`Selected: ${shape.type} | Drag to move | Use handles to resize/rotate | Shift+click for multi-select`);
+      }
+    } else {
+      setStatus(`Selected ${selectedIds.length} shapes | Drag to move group | Use handles to resize | Shift+click to deselect`);
+    }
+  }, [selectedIds, shapes]);
+
   const updateStatus = useCallback((message) => {
     setStatus(message);
   }, []);
-
-  // Load persisted state on app initialization
   useEffect(() => {
     const stored = loadFromStorage();
     if (stored) {
@@ -1326,27 +1353,12 @@ function App() {
       y: point.y - scrollOffsetRef.current.top
     };
 
-    if (selectedIds.length === 1) {
-      const selectedShape = shapesRef.current.find((shape) => shape.id === selectedIds[0]);
-      if (selectedShape?.type === 'flex-arrow') {
-        const handle = getFlexArrowHandleAtPoint(viewportPoint, selectedShape, scrollOffsetRef.current);
-        if (handle) {
-          layer.style.cursor = getArrowHandleCursor(selectedShape.type, handle);
-          return;
-        }
-      } else if (selectedShape?.type === 'curved-arrow') {
-        const handle = getCurvedArrowHandleAtPoint(viewportPoint, selectedShape, scrollOffsetRef.current);
-        if (handle) {
-          layer.style.cursor = getArrowHandleCursor(selectedShape.type, handle);
-          return;
-        }
-
-        const selectedBounds = getShapeBounds(selectedShape, scrollOffsetRef.current);
-        if (isPointInsideBounds(viewportPoint, selectedBounds)) {
-          layer.style.cursor = 'move';
-          return;
-        }
-      }
+    if (selectedTool === 'select') {
+      // Show hover hint when hovering over shapes in select mode
+      const hoveredShape = [...shapesRef.current].reverse().find((shape) =>
+        isPointInShape(point, shape, scrollOffsetRef.current)
+      );
+      setHoverShapeId(hoveredShape?.id ?? null);
     }
 
     const hitShape = [...shapesRef.current].reverse().find((shape) =>
@@ -1426,25 +1438,28 @@ function App() {
     ctx.imageSmoothingEnabled = true;
     ctx.clearRect(0, 0, canvas.width / ratio, canvas.height / ratio);
 
+    const currentScroll = scrollOffsetRef.current;
     shapes.forEach((shape) => {
-      drawShape(ctx, shape, scrollOffsetRef.current);
+      drawShape(ctx, shape, currentScroll);
     });
 
     if (interactionMode === 'shape' && selectedIds.length) {
       if (selectedIds.length === 1) {
         const focusedShape = shapes.find((shape) => shape.id === selectedIds[0]);
         if (focusedShape) {
+          const currentScroll = scrollOffsetRef.current;
           if (focusedShape.type === 'flex-arrow') {
-            drawFlexArrowHandles(ctx, focusedShape, scrollOffsetRef.current);
+            drawFlexArrowHandles(ctx, focusedShape, currentScroll);
           } else if (focusedShape.type === 'curved-arrow') {
-            drawCurvedArrowHandles(ctx, focusedShape, scrollOffsetRef.current);
+            drawCurvedArrowHandles(ctx, focusedShape, currentScroll);
           } else {
-            drawResizeHandles(ctx, focusedShape, scrollOffsetRef.current);
+            drawResizeHandles(ctx, focusedShape, currentScroll);
           }
         }
       } else {
         const selectedShapes = shapes.filter((shape) => selectedIds.includes(shape.id));
-        const groupBounds = getGroupBounds(selectedShapes, scrollOffsetRef.current);
+        const currentScroll = scrollOffsetRef.current;
+        const groupBounds = getGroupBounds(selectedShapes, currentScroll);
         if (groupBounds) {
           ctx.save();
           ctx.strokeStyle = '#2563eb';
@@ -1467,8 +1482,9 @@ function App() {
     }
 
     if (selection.marqueeBox) {
-      const left = Math.min(selection.marqueeBox.x1, selection.marqueeBox.x2) - scrollOffsetRef.current.left;
-      const top = Math.min(selection.marqueeBox.y1, selection.marqueeBox.y2) - scrollOffsetRef.current.top;
+      const currentScroll = scrollOffsetRef.current;
+      const left = Math.min(selection.marqueeBox.x1, selection.marqueeBox.x2) - currentScroll.left;
+      const top = Math.min(selection.marqueeBox.y1, selection.marqueeBox.y2) - currentScroll.top;
       const width = Math.abs(selection.marqueeBox.x2 - selection.marqueeBox.x1);
       const height = Math.abs(selection.marqueeBox.y2 - selection.marqueeBox.y1);
 
@@ -1487,19 +1503,21 @@ function App() {
       ctx.lineWidth = strokeWidth;
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
-      drawPen(ctx, currentPath, scrollOffsetRef.current);
+      const currentScroll = scrollOffsetRef.current;
+      drawPen(ctx, currentPath, currentScroll);
       ctx.restore();
     }
 
     if (selectedTool === 'erase' && eraserPointer) {
+      const currentScroll = scrollOffsetRef.current;
       ctx.save();
       ctx.strokeStyle = 'rgba(220, 38, 38, 0.9)';
       ctx.fillStyle = 'rgba(220, 38, 38, 0.12)';
       ctx.lineWidth = 1.25;
       ctx.beginPath();
       ctx.arc(
-        eraserPointer.x - scrollOffsetRef.current.left,
-        eraserPointer.y - scrollOffsetRef.current.top,
+        eraserPointer.x - currentScroll.left,
+        eraserPointer.y - currentScroll.top,
         Math.max(4, eraseSize / 2),
         0,
         Math.PI * 2
@@ -1691,6 +1709,13 @@ function App() {
     };
   }, [editorReady, syncCanvasViewportToEditor]);
 
+  useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    container.style.pointerEvents = interactionMode === 'shape' ? 'auto' : 'none';
+  }, [interactionMode, isDrawing, isErasing]);
+
   const handleCanvasMouseDown = useCallback((e) => {
     const point = getMousePoint(e);
     if (!point) return;
@@ -1700,8 +1725,11 @@ function App() {
       return;
     }
 
-    // Draw tool: start new path
-    if (selectedTool === 'draw') {
+    // Select tool: enable shape selection and manipulation
+    if (selectedTool === 'select') {
+      // Continue to shape selection logic below
+    } else if (selectedTool === 'draw') {
+      // Draw tool: start new path
       dragRef.current = null;
       resizeRef.current = null;
       rotateRef.current = null;
@@ -1712,10 +1740,8 @@ function App() {
       const layer = canvasContainerRef.current;
       if (layer) layer.style.cursor = 'crosshair';
       return;
-    }
-
-    // Erase tool: start erasing
-    if (selectedTool === 'erase') {
+    } else if (selectedTool === 'erase') {
+      // Erase tool: start erasing
       dragRef.current = null;
       resizeRef.current = null;
       rotateRef.current = null;
@@ -1726,6 +1752,18 @@ function App() {
       setIsErasing(true);
       eraseAtPoint(point);
       return;
+    } else {
+      // Shape creation tool - start creating shape by dragging
+      dragRef.current = {
+        isCreating: true,
+        toolType: selectedTool,
+        startX: point.x,
+        startY: point.y,
+        shapeId: null
+      };
+      setHoverShapeId(null);
+      setSelectedIds([]);
+      return;
     }
 
     const viewportPoint = {
@@ -1735,7 +1773,8 @@ function App() {
 
     const orderedShapes = [...shapesRef.current].reverse();
 
-    if (selectedIds.length > 1) {
+    // For select tool, handle shapes first
+    if (selectedTool === 'select') {
       const selectedShapes = shapesRef.current.filter((shape) => selectedIds.includes(shape.id));
       const groupBounds = getGroupBounds(selectedShapes, scrollOffsetRef.current);
       if (groupBounds) {
@@ -1935,6 +1974,86 @@ function App() {
       return;
     }
 
+    // Shape creation: update shape size while dragging
+    if (dragRef.current && dragRef.current.isCreating) {
+      const { startX, startY, toolType, shapeId } = dragRef.current;
+      const dx = point.x - startX;
+      const dy = point.y - startY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      
+      // Create shape if dragging far enough
+      if (distance > 5 && !shapeId) {
+        const centerX = (startX + point.x) / 2;
+        const centerY = (startY + point.y) / 2;
+        const newShape = {
+          id: `shape-${Date.now()}-${Math.random()}`,
+          type: toolType,
+          x: centerX,
+          y: centerY,
+          strokeColor,
+          fillColor,
+          strokeWidth
+        };
+
+        // Set initial dimensions based on tool type
+        if (toolType === 'rectangle') {
+          newShape.width = Math.abs(dx);
+          newShape.height = Math.abs(dy);
+        } else if (toolType === 'circle') {
+          newShape.radius = distance / 2;
+        } else if (toolType === 'line') {
+          newShape.width = Math.abs(dx);
+        } else if (toolType === 'arrow' || toolType === 'double-arrow') {
+          newShape.width = Math.abs(dx);
+        } else if (toolType === 'curved-arrow') {
+          newShape.width = Math.abs(dx) || 60;
+        } else if (toolType === 'text') {
+          newShape.text = 'Text';
+        } else if (toolType === 'array' || toolType === 'sll' || toolType === 'dll') {
+          newShape.count = elementCount;
+          newShape.blockSize = blockSize;
+          newShape.cellWidth = blockSize;
+          newShape.cellHeight = blockSize;
+          newShape.cells = Array(elementCount * (toolType === 'dll' ? 3 : toolType === 'sll' ? 2 : 1)).fill('');
+        } else if (toolType === 'tree') {
+          newShape.count = Math.max(3, elementCount);
+          newShape.blockSize = blockSize;
+        }
+
+        const nextShapes = [...shapesRef.current, newShape];
+        shapesRef.current = nextShapes;
+        setShapes(nextShapes);
+        dragRef.current.shapeId = newShape.id;
+      } else if (shapeId) {
+        // Update existing shape dimensions
+        const nextShapes = shapesRef.current.map((shape) => {
+          if (shape.id !== shapeId) return shape;
+          
+          const updated = { ...shape };
+          if (toolType === 'rectangle') {
+            updated.width = Math.max(20, Math.abs(dx));
+            updated.height = Math.max(20, Math.abs(dy));
+          } else if (toolType === 'circle') {
+            updated.radius = Math.max(10, distance / 2);
+          } else if (toolType === 'line') {
+            updated.width = Math.max(20, Math.abs(dx));
+          } else if (toolType === 'arrow' || toolType === 'double-arrow') {
+            updated.width = Math.max(20, Math.abs(dx));
+          } else if (toolType === 'curved-arrow') {
+            updated.width = Math.max(20, Math.abs(dx));
+          }
+          
+          return updated;
+        });
+        
+        shapesRef.current = nextShapes;
+        setShapes(nextShapes);
+      }
+      
+      updateCursor(point);
+      return;
+    }
+
     if (selection.marqueeRef.current.active) {
       selection.updateMarquee(point);
       return;
@@ -2096,7 +2215,7 @@ function App() {
     setHoverShapeId(hovered?.id ?? null);
 
     updateCursor(point);
-  }, [applyResize, eraseAtPoint, getMousePoint, interactionMode, isDrawing, isErasing, selectedTool, selection, setSelectedShapeId, updateCursor]);
+  }, [applyResize, blockSize, elementCount, eraseAtPoint, fillColor, getMousePoint, interactionMode, isDrawing, isErasing, selectedTool, selection, setSelectedShapeId, strokeColor, strokeWidth, updateCursor]);
 
   const handleCanvasMouseUp = useCallback(() => {
     if (interactionMode !== 'shape') {
@@ -2154,6 +2273,20 @@ function App() {
 
       setIsDrawing(false);
       setCurrentPath([]);
+      return;
+    }
+
+    // Finish shape creation
+    if (dragRef.current && dragRef.current.isCreating) {
+      const { toolType, shapeId } = dragRef.current;
+      dragRef.current = null;
+      
+      if (shapeId) {
+        pushHistory(captureSnapshot());
+        updateStatus(`${toolType} added`);
+        setSelectedIds([shapeId]);
+        setHoverShapeId(shapeId);
+      }
       return;
     }
 
@@ -2698,6 +2831,7 @@ function App() {
         <div
           className="canvas-layer"
           ref={canvasContainerRef}
+          data-testid="drawing-canvas-layer"
           data-tool={selectedTool}
           onDrop={handleDropOnCanvas}
           onDragOver={(e) => e.preventDefault()}
@@ -2711,7 +2845,7 @@ function App() {
             handleCanvasMouseUp();
           }}
         >
-          <canvas ref={canvasRef} className="canvas-element" />
+          <canvas ref={canvasRef} className="canvas-element" data-testid="drawing-canvas" />
           {renderArrayCellValues()}
           {editingCell && (
             <input

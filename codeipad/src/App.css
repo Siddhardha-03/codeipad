@@ -65,7 +65,7 @@ body {
   background: transparent;
   visibility: visible;
   transition: visibility 0.15s ease;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .canvas-element {

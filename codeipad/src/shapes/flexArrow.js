@@ -57,7 +57,7 @@ function drawArrowHead(ctx, tip, angle, strokeColor, fillColor, strokeWidth) {
   ctx.restore();
 }
 
-export function draw(ctx, shape) {
+export function draw(ctx, shape, scrollOffset = { left: 0, top: 0 }) {
   let [p0, p1, p2, p3] = getPoints(shape);
   const angle = shape.angle || 0;
   const flipped = Boolean(shape.flipped);
@@ -81,6 +81,12 @@ export function draw(ctx, shape) {
       p3 = rotatePoint(p3, center, angle);
     }
   }
+
+  // Apply scroll offset to all points
+  p0 = { x: p0.x - scrollOffset.left, y: p0.y - scrollOffset.top };
+  p1 = { x: p1.x - scrollOffset.left, y: p1.y - scrollOffset.top };
+  p2 = { x: p2.x - scrollOffset.left, y: p2.y - scrollOffset.top };
+  p3 = { x: p3.x - scrollOffset.left, y: p3.y - scrollOffset.top };
 
   const strokeColor = shape.strokeColor || '#000000';
   const fillColor = shape.fillColor && shape.fillColor !== 'transparent'

@@ -49,14 +49,16 @@ function drawArrowHead(ctx, tip, angle, strokeColor, fillColor, strokeWidth, dou
   ctx.restore();
 }
 
-export function draw(ctx, shape) {
+export function draw(ctx, shape, scrollOffset = { left: 0, top: 0 }) {
   const { start, end } = getLinePoints(shape);
+  const offsetStart = { x: start.x - scrollOffset.left, y: start.y - scrollOffset.top };
+  const offsetEnd = { x: end.x - scrollOffset.left, y: end.y - scrollOffset.top };
   const strokeColor = shape.strokeColor || '#000000';
   const fillColor = shape.fillColor && shape.fillColor !== 'transparent'
     ? shape.fillColor
     : 'rgba(0, 0, 0, 0.04)';
   const strokeWidth = shape.strokeWidth || 2;
-  const angle = Math.atan2(end.y - start.y, end.x - start.x);
+  const angle = Math.atan2(offsetEnd.y - offsetStart.y, offsetEnd.x - offsetStart.x);
   const doubleHeaded = shape.type === 'double-arrow';
 
   ctx.save();
@@ -67,13 +69,13 @@ export function draw(ctx, shape) {
   ctx.lineJoin = 'round';
 
   ctx.beginPath();
-  ctx.moveTo(start.x, start.y);
-  ctx.lineTo(end.x, end.y);
+  ctx.moveTo(offsetStart.x, offsetStart.y);
+  ctx.lineTo(offsetEnd.x, offsetEnd.y);
   ctx.stroke();
 
-  drawArrowHead(ctx, end, angle, strokeColor, fillColor, strokeWidth, doubleHeaded);
+  drawArrowHead(ctx, offsetEnd, angle, strokeColor, fillColor, strokeWidth, doubleHeaded);
   if (doubleHeaded) {
-    drawArrowHead(ctx, start, angle + Math.PI, strokeColor, fillColor, strokeWidth, false);
+    drawArrowHead(ctx, offsetStart, angle + Math.PI, strokeColor, fillColor, strokeWidth, false);
   }
 
   ctx.restore();

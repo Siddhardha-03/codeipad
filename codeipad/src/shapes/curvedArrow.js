@@ -82,10 +82,14 @@ function drawArrowHead(ctx, tip, angle, strokeColor, fillColor, strokeWidth) {
   ctx.restore();
 }
 
-export function draw(ctx, shape) {
+export function draw(ctx, shape, scrollOffset = { left: 0, top: 0 }) {
   const raw = getPoints(shape);
   const hasCustomPoints = Boolean(shape.points && shape.points.length >= 4);
   const [p0, p1, p2, p3] = transformPoints(raw, shape);
+  const offsetP0 = { x: p0.x - scrollOffset.left, y: p0.y - scrollOffset.top };
+  const offsetP1 = { x: p1.x - scrollOffset.left, y: p1.y - scrollOffset.top };
+  const offsetP2 = { x: p2.x - scrollOffset.left, y: p2.y - scrollOffset.top };
+  const offsetP3 = { x: p3.x - scrollOffset.left, y: p3.y - scrollOffset.top };
 
   const strokeColor = shape.strokeColor ?? '#000';
   const fillColor =
@@ -108,26 +112,28 @@ export function draw(ctx, shape) {
     const y = shape.y ?? 0;
     const width = shape.width ?? 140;
     const r = width / 2;
+    const offsetX = x - scrollOffset.left;
+    const offsetY = y - scrollOffset.top;
 
     ctx.beginPath();
     // center at (x, y), arc from PI -> 0 draws the lower semicircle
-    ctx.arc(x, y, r, Math.PI, 0, false);
+    ctx.arc(offsetX, offsetY, r, Math.PI, 0, false);
     ctx.stroke();
 
     // Arrow tip tangent angle at end (theta = 0) -> downward
     const angle = Math.PI / 2;
-    const tip = { x: x + r, y };
+    const tip = { x: offsetX + r, y: offsetY };
     drawArrowHead(ctx, tip, angle, strokeColor, fillColor, strokeWidth);
   } else {
     ctx.beginPath();
-    ctx.moveTo(p0.x, p0.y);
-    ctx.bezierCurveTo(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+    ctx.moveTo(offsetP0.x, offsetP0.y);
+    ctx.bezierCurveTo(offsetP1.x, offsetP1.y, offsetP2.x, offsetP2.y, offsetP3.x, offsetP3.y);
     ctx.stroke();
 
-    const dx = 3 * (p3.x - p2.x);
-    const dy = 3 * (p3.y - p2.y);
+    const dx = 3 * (offsetP3.x - offsetP2.x);
+    const dy = 3 * (offsetP3.y - offsetP2.y);
     const angle = Math.atan2(dy, dx);
-    drawArrowHead(ctx, p3, angle, strokeColor, fillColor, strokeWidth);
+    drawArrowHead(ctx, offsetP3, angle, strokeColor, fillColor, strokeWidth);
   }
 
   ctx.restore();
