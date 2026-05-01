@@ -140,11 +140,26 @@ export function draw(ctx, shape, scrollOffset = { left: 0, top: 0 }) {
 }
 
 export function getBounds(shape) {
-  const points = transformPoints(getPoints(shape), shape);
-  const padding = Math.max(8, (shape.strokeWidth ?? 2) * 3);
+  const padding = Math.max(10, (shape.strokeWidth ?? 2) * 3);
 
-  const xs = points.map(p => p.x);
-  const ys = points.map(p => p.y);
+  if (!shape.points || shape.points.length < 4) {
+    const x = shape.x ?? 0;
+    const y = shape.y ?? 0;
+    const width = shape.width ?? 140;
+    const r = width / 2;
+    const tipSize = Math.max(10, (shape.strokeWidth ?? 2) * 3);
+
+    return {
+      left: x - r - padding,
+      top: y - r - padding,
+      width: width + padding * 2,
+      height: r + tipSize + padding * 2
+    };
+  }
+
+  const points = transformPoints(getPoints(shape), shape);
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
 
   return {
     left: Math.min(...xs) - padding,
@@ -156,7 +171,7 @@ export function getBounds(shape) {
 
 export function isHit(point, shape) {
   const points = transformPoints(getPoints(shape), shape);
-  const tolerance = Math.max(8, (shape.strokeWidth ?? 2) * 3);
+  const tolerance = Math.max(14, (shape.strokeWidth ?? 2) * 3);
 
   const steps = 30;
 

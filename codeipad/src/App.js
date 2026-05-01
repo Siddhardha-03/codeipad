@@ -356,7 +356,9 @@ function getCurvedArrowHandleAtPoint(point, shape, scrollOffset) {
   if (shape.type !== 'curved-arrow') return null;
 
   const handles = getCurvedArrowHandlePoints(shape);
-  const threshold = FLEX_ARROW_HANDLE_SIZE + 3;
+  // Balanced threshold for handle detection - strict enough to allow shape movement,
+  // but loose enough to allow deliberate handle manipulation
+  const threshold = 8;
 
   for (const [handleName, handlePoint] of Object.entries(handles)) {
     const localX = handlePoint.x - scrollOffset.left;
@@ -703,13 +705,18 @@ function drawFlexArrowHandles(ctx, shape, scrollOffset) {
 function drawCurvedArrowHandles(ctx, shape, scrollOffset) {
   if (shape.type !== 'curved-arrow') return;
 
+  const bounds = getShapeBounds(shape, scrollOffset);
   const handles = getCurvedArrowHandlePoints(shape);
-  const orderedNames = ['p0', 'p1', 'pmid', 'p2', 'p3'];
+  const orderedNames = ['p0', 'pmid', 'p3'];
 
   ctx.save();
   ctx.fillStyle = '#ffffff';
   ctx.strokeStyle = '#2563eb';
   ctx.lineWidth = 2;
+
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(bounds.left - 4, bounds.top - 4, bounds.width + 8, bounds.height + 8);
+  ctx.setLineDash([]);
 
   orderedNames.forEach((name) => {
     const handle = handles[name];
@@ -717,22 +724,12 @@ function drawCurvedArrowHandles(ctx, shape, scrollOffset) {
     const x = handle.x - scrollOffset.left;
     const y = handle.y - scrollOffset.top;
     ctx.beginPath();
-    // midpoint handle slightly larger and distinct
     if (name === 'pmid') {
       ctx.fillStyle = '#eef2ff';
       ctx.arc(x, y, FLEX_ARROW_HANDLE_SIZE * 0.65, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
       ctx.fillStyle = '#ffffff';
-    } else if (name === 'p1' || name === 'p2') {
-      // emphasize control handles so they are always visible
-      ctx.fillStyle = '#fff7ed';
-      ctx.strokeStyle = '#ea580c';
-      ctx.arc(x, y, FLEX_ARROW_HANDLE_SIZE * 0.62, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.strokeStyle = '#2563eb';
     } else {
       ctx.arc(x, y, FLEX_ARROW_HANDLE_SIZE / 2, 0, Math.PI * 2);
       ctx.fill();
@@ -938,13 +935,13 @@ function App() {
   const resizeObserverRef = useRef(null);
   const codeHistoryTimerRef = useRef(null);
   const historyLockRef = useRef(false);
-  const latestStateRef = useRef({ language: 'javascript', theme: 'light' });
   const shapesRef = useRef([]);
   const dragRef = useRef(null);
   const resizeRef = useRef(null);
   const rotateRef = useRef(null);
   const erasedDuringStrokeRef = useRef(false);
   const debouncedSaveRef = useRef(null);
+  const latestStateRef = useRef({ shapes: [], language: 'plaintext', theme: 'light', editorFontSize: 15, blockSize: 60, elementCount: 5 });
 
   const setSelectedShapeId = useCallback((id) => {
     setSelectedIds(id ? [id] : []);
@@ -967,7 +964,9 @@ function App() {
 
   useEffect(() => {
     shapesRef.current = shapes;
-  }, [shapes]);
+    // Keep latest state always available for debounced save
+    latestStateRef.current = { shapes, language, theme, editorFontSize, blockSize, elementCount };
+  }, [shapes, language, theme, editorFontSize, blockSize, elementCount]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1042,14 +1041,15 @@ function App() {
     if (!debouncedSaveRef.current) {
       debouncedSaveRef.current = debounce(() => {
         const code = monacoEditorRef.current?.getValue?.() || DEFAULT_CODE;
+        const state = latestStateRef.current;
         const dataToSave = {
           code,
-          shapes,
-          language,
-          theme,
-          editorFontSize,
-          blockSize,
-          elementCount
+          shapes: state.shapes,
+          language: state.language,
+          theme: state.theme,
+          editorFontSize: state.editorFontSize,
+          blockSize: state.blockSize,
+          elementCount: state.elementCount
         };
         saveToStorage(dataToSave);
       }, 400);
@@ -1065,14 +1065,15 @@ function App() {
       if (!debouncedSaveRef.current) {
         debouncedSaveRef.current = debounce(() => {
           const code = monacoEditorRef.current?.getValue?.() || DEFAULT_CODE;
+          const state = latestStateRef.current;
           const dataToSave = {
             code,
-            shapes,
-            language,
-            theme,
-            editorFontSize,
-            blockSize,
-            elementCount
+            shapes: state.shapes,
+            language: state.language,
+            theme: state.theme,
+            editorFontSize: state.editorFontSize,
+            blockSize: state.blockSize,
+            elementCount: state.elementCount
           };
           saveToStorage(dataToSave);
         }, 400);
@@ -1280,7 +1281,7 @@ function App() {
     } else if (toolType === 'arrow' || toolType === 'double-arrow') {
       shape.width = 120;
     } else if (toolType === 'curved-arrow') {
-      shape.width = 60;
+      shape.width = 90;
     } else if (toolType === 'text') {
       shape.text = 'Text';
     } else if (toolType === 'array' || toolType === 'sll' || toolType === 'dll') {
@@ -1798,6 +1799,63 @@ function App() {
       }
     }
 
+    // Special handling for single-selected curved arrows: prioritize movement over handle detection
+    if (selectedIds.length === 1) {
+      const selectedShape = orderedShapes.find((shape) => shape.id === selectedIds[0]);
+      if (selectedShape?.type === 'curved-arrow') {
+        const selectedBounds = getShapeBounds(selectedShape, scrollOffsetRef.current);
+        if (isPointInsideBounds(viewportPoint, selectedBounds)) {
+          // For single-selected curved arrows, only check for handles with a very strict threshold
+          const strictHandle = getCurvedArrowHandleAtPoint(viewportPoint, selectedShape, scrollOffsetRef.current);
+          if (strictHandle) {
+            // Check if click is VERY close to handle (precise click on handle)
+            const handles = getCurvedArrowHandlePoints(selectedShape);
+            const handlePoint = handles[strictHandle];
+            const dx = Math.abs(viewportPoint.x - (handlePoint.x - scrollOffsetRef.current.left));
+            const dy = Math.abs(viewportPoint.y - (handlePoint.y - scrollOffsetRef.current.top));
+            const preciseThreshold = 5; // Very strict for precise handle clicks
+            
+            if (dx <= preciseThreshold && dy <= preciseThreshold) {
+              // Precise click on handle - do handle manipulation
+              const bounds = getShapeBounds(selectedShape, scrollOffsetRef.current);
+              resizeRef.current = {
+                shapeId: selectedShape.id,
+                handle: strictHandle,
+                bounds,
+                type: 'curved-arrow-handle'
+              };
+              setHoverShapeId(selectedShape.id);
+              updateCursor(point);
+              return;
+            }
+          }
+          
+          // Not precisely on a handle - initiate movement
+          const originals = shapesRef.current.reduce((acc, shape) => {
+            if (shape.id === selectedShape.id) {
+              acc[shape.id] = {
+                x: shape.x,
+                y: shape.y,
+                points: Array.isArray(shape.points) ? shape.points.map((p) => ({ ...p })) : undefined
+              };
+            }
+            return acc;
+          }, {});
+
+          dragRef.current = {
+            shapeIds: [selectedShape.id],
+            leadShapeId: selectedShape.id,
+            startX: point.x,
+            startY: point.y,
+            originals
+          };
+          setHoverShapeId(selectedShape.id);
+          updateCursor(point);
+          return;
+        }
+      }
+    }
+
     for (let i = 0; i < orderedShapes.length; i += 1) {
       const shape = orderedShapes[i];
       const handleEligible = isHandleTargetSelected(shape.id, selectedIds);
@@ -1818,7 +1876,7 @@ function App() {
           return;
         }
       }
-      if (shape.type === 'curved-arrow' && handleEligible) {
+      if (shape.type === 'curved-arrow' && handleEligible && !selectedIds.includes(shape.id)) {
         const ch = getCurvedArrowHandleAtPoint(viewportPoint, shape, scrollOffsetRef.current);
         if (ch) {
           resizeRef.current = {
@@ -2493,19 +2551,22 @@ function App() {
 
   const handleToolSelect = useCallback((toolType) => {
     setSelectedTool(toolType);
-    if (toolType === 'draw' || toolType === 'erase') {
-      setInteractionMode('shape');
-      setSelectedShapeId(null);
-      setHoverShapeId(null);
-      updateStatus(toolType === 'draw' ? 'Draw mode' : 'Erase mode');
-    }
-
-    if (toolType === 'select') {
-      setInteractionMode('shape');
-      setSelectedShapeId(null);
-      setHoverShapeId(null);
+    // Enable canvas mode for all tools
+    setInteractionMode('shape');
+    setSelectedShapeId(null);
+    setHoverShapeId(null);
+    
+    if (toolType === 'draw') {
+      updateStatus('Draw mode');
+    } else if (toolType === 'erase') {
+      updateStatus('Erase mode');
+    } else if (toolType === 'select') {
       updateStatus('Select mode');
+    } else {
+      // Shape creation tools (rectangle, circle, arrow, etc.)
+      updateStatus(`${toolType} mode`);
     }
+    
     setIsDrawing(false);
     setCurrentPath([]);
     setIsErasing(false);
