@@ -80,6 +80,79 @@ function getArrayCellGeometry(shape, index) {
   };
 }
 
+function getDataShapeLayout(shapeType, count, width, height) {
+  const normalizedType = shapeType === 'sll' || shapeType === 'dll' ? shapeType : 'array';
+  const cellsPerNode = normalizedType === 'dll' ? 3 : normalizedType === 'sll' ? 2 : 1;
+  const gap = normalizedType === 'array' ? 10 : 14;
+  const safeCount = Math.max(1, count || 1);
+  const safeWidth = Math.max(24, width || 24);
+  const usableWidth = Math.max(24, safeWidth - (safeCount - 1) * gap);
+  const nodeWidth = usableWidth / safeCount;
+  const cellWidth = Math.max(18, nodeWidth / cellsPerNode);
+  const cellHeight = Math.max(MIN_DATA_SHAPE_HEIGHT, height || DEFAULT_DATA_SHAPE_HEIGHT);
+  const finalWidth = safeCount * (cellWidth * cellsPerNode) + (safeCount - 1) * gap;
+
+  return {
+    type: normalizedType,
+    count: safeCount,
+    cellsPerNode,
+    gap,
+    cellWidth,
+    cellHeight,
+    width: finalWidth,
+    height: cellHeight,
+    blockSize: Math.max(18, Math.round(Math.min(cellWidth, cellHeight)))
+  };
+}
+
+function getTreeLayout(width, height) {
+  const safeWidth = Math.max(MIN_TREE_SIZE, width || MIN_TREE_SIZE);
+  const safeHeight = Math.max(MIN_TREE_SIZE, height || MIN_TREE_SIZE);
+
+  return {
+    width: safeWidth,
+    height: safeHeight,
+    blockSize: Math.max(24, Math.round(Math.min(safeWidth / 3.2, safeHeight / 2.2)))
+  };
+}
+
+function normalizeStoredShape(shape) {
+  if (!shape || typeof shape !== 'object') return shape;
+
+  if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll') {
+    const layout = getDataShapeLayout(shape.type, shape.count || 1, shape.cellWidth || shape.blockSize || 60, shape.cellHeight || DEFAULT_DATA_SHAPE_HEIGHT);
+    const cells = Array.isArray(shape.cells)
+      ? shape.cells.slice(0, layout.count * layout.cellsPerNode)
+      : [];
+
+    while (cells.length < layout.count * layout.cellsPerNode) {
+      cells.push('');
+    }
+
+    return {
+      ...shape,
+      count: layout.count,
+      cellWidth: layout.cellWidth,
+      cellHeight: layout.cellHeight,
+      width: layout.width,
+      height: layout.height,
+      blockSize: layout.blockSize,
+      cells
+    };
+  }
+
+  if (shape.type === 'tree') {
+    const layout = getTreeLayout(shape.width, shape.height);
+
+    return {
+      ...shape,
+      ...layout
+    };
+  }
+
+  return shape;
+}
+
 const TOOL_ITEMS = [
   { type: 'select', label: 'Select / Move', short: 'Sel', icon: '⌖' },
   { type: 'draw', label: 'Freehand Draw', short: 'Draw', icon: '🖌' },
@@ -120,6 +193,11 @@ const MIN_ERASER_SIZE = 4;
 const MAX_ERASER_SIZE = 32;
 const MIN_DRAW_WIDTH = 1;
 const MAX_DRAW_WIDTH = 12;
+const DEFAULT_DATA_SHAPE_HEIGHT = 60;
+const MIN_DATA_SHAPE_HEIGHT = 40;
+const MIN_TREE_SIZE = 48;
+const DATA_SHAPE_HANDLE_SIZE = 14;
+const DATA_SHAPE_HANDLE_THRESHOLD = 26;
 const THEME_DEFAULT_COLORS = {
   light: '#000000',
   dark: '#2563eb'
@@ -262,7 +340,13 @@ function getShapeBounds(shape, scrollOffset) {
   }
 
   if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll') {
-    return { left: x - shape.width / 2, top: y - shape.height / 2, width: shape.width, height: shape.height };
+    const layout = getArrayLayout(shape);
+    return {
+      left: x - layout.totalWidth / 2,
+      top: y - layout.cellHeight / 2,
+      width: layout.totalWidth,
+      height: layout.cellHeight
+    };
   }
 
   if (shape.type === 'tree') {
@@ -304,6 +388,9 @@ function getHandleAtPoint(point, bounds, shapeType) {
     return null;
   }
 
+  const isDataShape = shapeType === 'array' || shapeType === 'sll' || shapeType === 'dll' || shapeType === 'tree';
+  const handleThreshold = isDataShape ? DATA_SHAPE_HANDLE_THRESHOLD : HANDLE_SIZE + 2;
+
   if (ROTATABLE_TYPES.has(shapeType)) {
     const rotateHandle = getRotateHandlePosition(bounds);
     const rotateThreshold = HANDLE_SIZE + 4;
@@ -321,13 +408,12 @@ function getHandleAtPoint(point, bounds, shapeType) {
   }
 
   const handles = getHandlePositions(bounds);
-  const threshold = HANDLE_SIZE + 2;
   const keys = Object.keys(handles);
 
   for (let i = 0; i < keys.length; i += 1) {
     const key = keys[i];
     const handle = handles[key];
-    if (Math.abs(point.x - handle.x) <= threshold && Math.abs(point.y - handle.y) <= threshold) {
+    if (Math.abs(point.x - handle.x) <= handleThreshold && Math.abs(point.y - handle.y) <= handleThreshold) {
       return key;
     }
   }
@@ -645,6 +731,9 @@ function drawShape(ctx, shape, scrollOffset) {
 function drawResizeHandles(ctx, shape, scrollOffset) {
   const bounds = getShapeBounds(shape, scrollOffset);
   const handles = getHandlePositions(bounds);
+  const handleSize = shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll' || shape.type === 'tree'
+    ? DATA_SHAPE_HANDLE_SIZE
+    : HANDLE_SIZE;
 
   ctx.save();
   ctx.fillStyle = '#ffffff';
@@ -655,8 +744,8 @@ function drawResizeHandles(ctx, shape, scrollOffset) {
   ctx.setLineDash([]);
 
   Object.values(handles).forEach((handle) => {
-    ctx.fillRect(handle.x - HANDLE_SIZE / 2, handle.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
-    ctx.strokeRect(handle.x - HANDLE_SIZE / 2, handle.y - HANDLE_SIZE / 2, HANDLE_SIZE, HANDLE_SIZE);
+    ctx.fillRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
+    ctx.strokeRect(handle.x - handleSize / 2, handle.y - handleSize / 2, handleSize, handleSize);
   });
 
   if (ROTATABLE_TYPES.has(shape.type)) {
@@ -1012,7 +1101,7 @@ function App() {
       if (stored.blockSize) setBlockSize(stored.blockSize);
       if (stored.elementCount) setElementCount(stored.elementCount);
       // Restore shapes
-      if (Array.isArray(stored.shapes)) setShapes(stored.shapes);
+      if (Array.isArray(stored.shapes)) setShapes(stored.shapes.map(normalizeStoredShape));
       updateStatus('Session restored');
     }
   }, [loadFromStorage, updateStatus]);
@@ -1240,7 +1329,7 @@ function App() {
       monacoEditorRef.current.setValue(snapshot.code);
     }
 
-    const nextShapes = snapshot.shapes ?? [];
+    const nextShapes = (snapshot.shapes ?? []).map(normalizeStoredShape);
     shapesRef.current = nextShapes;
     setShapes(nextShapes);
 
@@ -1573,21 +1662,15 @@ function App() {
 
     if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll') {
       const count = Math.max(1, shape.count || 1);
-      const cellsPerNode = shape.type === 'dll' ? 3 : shape.type === 'sll' ? 2 : 1;
-      const gap = shape.type === 'array' ? 10 : 14;
-      const usableWidth = Math.max(24, width - (count - 1) * gap);
-      const nodeWidth = usableWidth / count;
-      const cellWidth = Math.max(18, nodeWidth / cellsPerNode);
-      const cellHeight = Math.max(24, height);
-      const finalWidth = count * (cellWidth * cellsPerNode) + (count - 1) * gap;
+      const layout = getDataShapeLayout(shape.type, count, width, height);
 
       return {
         ...common,
-        cellWidth,
-        cellHeight,
-        width: finalWidth,
-        height: cellHeight,
-        blockSize: Math.max(18, Math.round(Math.min(cellWidth, cellHeight)))
+        cellWidth: layout.cellWidth,
+        cellHeight: layout.cellHeight,
+        width: layout.width,
+        height: layout.height,
+        blockSize: layout.blockSize
       };
     }
 
@@ -1921,6 +2004,22 @@ function App() {
         updateCursor(point);
         return;
       }
+
+      if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll' || shape.type === 'tree') {
+        const dataHandle = getHandleAtPoint(viewportPoint, bounds, shape.type);
+        if (dataHandle) {
+          resizeRef.current = {
+            shapeId: shape.id,
+            handle: dataHandle,
+            bounds,
+            type: 'data-shape-handle'
+          };
+          setHoverShapeId(shape.id);
+          setSelectedIds([shape.id]);
+          updateCursor(point);
+          return;
+        }
+      }
     }
 
     if (selectedIds.length === 1) {
@@ -2068,14 +2167,23 @@ function App() {
         } else if (toolType === 'text') {
           newShape.text = 'Text';
         } else if (toolType === 'array' || toolType === 'sll' || toolType === 'dll') {
+          const width = Math.max(blockSize * (toolType === 'dll' ? 3 : toolType === 'sll' ? 2 : 1), Math.abs(dx) || blockSize);
+          const height = Math.max(MIN_DATA_SHAPE_HEIGHT, Math.abs(dy) || DEFAULT_DATA_SHAPE_HEIGHT);
+          const layout = getDataShapeLayout(toolType, elementCount, width, height);
+
           newShape.count = elementCount;
-          newShape.blockSize = blockSize;
-          newShape.cellWidth = blockSize;
-          newShape.cellHeight = blockSize;
-          newShape.cells = Array(elementCount * (toolType === 'dll' ? 3 : toolType === 'sll' ? 2 : 1)).fill('');
+          newShape.blockSize = layout.blockSize;
+          newShape.cellWidth = layout.cellWidth;
+          newShape.cellHeight = layout.cellHeight;
+          newShape.width = layout.width;
+          newShape.height = layout.height;
+          newShape.cells = Array(layout.count * layout.cellsPerNode).fill('');
         } else if (toolType === 'tree') {
+          const layout = getTreeLayout(Math.abs(dx) || blockSize * 3.2, Math.abs(dy) || blockSize * 2.2);
           newShape.count = Math.max(3, elementCount);
-          newShape.blockSize = blockSize;
+          newShape.width = layout.width;
+          newShape.height = layout.height;
+          newShape.blockSize = layout.blockSize;
         }
 
         const nextShapes = [...shapesRef.current, newShape];
@@ -2099,6 +2207,22 @@ function App() {
             updated.width = Math.max(20, Math.abs(dx));
           } else if (toolType === 'curved-arrow') {
             updated.width = Math.max(20, Math.abs(dx));
+          } else if (toolType === 'array' || toolType === 'sll' || toolType === 'dll') {
+            const count = Math.max(1, shape.count || elementCount || 1);
+            const width = Math.max(blockSize * count, Math.abs(dx) || blockSize * count);
+            const height = Math.max(MIN_DATA_SHAPE_HEIGHT, Math.abs(dy) || DEFAULT_DATA_SHAPE_HEIGHT);
+            const layout = getDataShapeLayout(toolType, count, width, height);
+            updated.count = layout.count;
+            updated.cellWidth = layout.cellWidth;
+            updated.cellHeight = layout.cellHeight;
+            updated.width = layout.width;
+            updated.height = layout.height;
+            updated.blockSize = layout.blockSize;
+          } else if (toolType === 'tree') {
+            const layout = getTreeLayout(Math.abs(dx), Math.abs(dy));
+            updated.width = layout.width;
+            updated.height = layout.height;
+            updated.blockSize = layout.blockSize;
           }
           
           return updated;
@@ -2170,6 +2294,21 @@ function App() {
           if (typeof original.width === 'number') updated.width = Math.max(20, original.width * scaleX);
           if (typeof original.height === 'number') updated.height = Math.max(20, original.height * scaleY);
           if (typeof original.radius === 'number') updated.radius = Math.max(12, original.radius * Math.min(scaleX, scaleY));
+          if (shape.type === 'array' || shape.type === 'sll' || shape.type === 'dll') {
+            const layout = getDataShapeLayout(shape.type, original.count || shape.count || 1, updated.width || original.width, updated.height || original.height);
+            updated.count = layout.count;
+            updated.cellWidth = layout.cellWidth;
+            updated.cellHeight = layout.cellHeight;
+            updated.width = layout.width;
+            updated.height = layout.height;
+            updated.blockSize = layout.blockSize;
+          }
+          if (shape.type === 'tree') {
+            const layout = getTreeLayout(updated.width || original.width, updated.height || original.height);
+            updated.width = layout.width;
+            updated.height = layout.height;
+            updated.blockSize = layout.blockSize;
+          }
           if (shape.type === 'pen' && Array.isArray(original.points)) {
             updated.points = original.points.map((p) => ({
               x: newBounds.left + (p.x - scrollOffsetRef.current.left - bounds.left) * scaleX + scrollOffsetRef.current.left,
